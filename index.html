@@ -3347,6 +3347,76 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
       updateNetCalories();
     }
     function setProg(id, v, g) { document.getElementById(id).style.width = Math.min(100, g ? v / g * 100 : 0) + '%' }
+    // Common Indian foods cache — instant logging without AI
+    const commonFoods = {
+      'banana': [{ food_name: 'Banana', portion: '1 medium (120g)', calories: 105, protein: 1.3, carbs: 27, fat: 0.4, fiber: 3.1 }],
+      'apple': [{ food_name: 'Apple', portion: '1 medium (180g)', calories: 95, protein: 0.5, carbs: 25, fat: 0.3, fiber: 4.4 }],
+      'egg': [{ food_name: 'Boiled Egg', portion: '1 large', calories: 78, protein: 6.3, carbs: 0.6, fat: 5.3, fiber: 0 }],
+      'boiled egg': [{ food_name: 'Boiled Egg', portion: '1 large', calories: 78, protein: 6.3, carbs: 0.6, fat: 5.3, fiber: 0 }],
+      'roti': [{ food_name: 'Roti (Chapati)', portion: '1 medium', calories: 120, protein: 3.5, carbs: 20, fat: 3.5, fiber: 2 }],
+      'chapati': [{ food_name: 'Roti (Chapati)', portion: '1 medium', calories: 120, protein: 3.5, carbs: 20, fat: 3.5, fiber: 2 }],
+      'rice': [{ food_name: 'Cooked Rice', portion: '1 cup (200g)', calories: 260, protein: 5.5, carbs: 57, fat: 0.6, fiber: 0.6 }],
+      'dal': [{ food_name: 'Dal (Cooked Lentils)', portion: '1 cup (200g)', calories: 180, protein: 12, carbs: 28, fat: 2, fiber: 8 }],
+      'chai': [{ food_name: 'Masala Chai', portion: '1 cup', calories: 80, protein: 2, carbs: 12, fat: 2.5, fiber: 0 }],
+      'tea': [{ food_name: 'Tea with Milk', portion: '1 cup', calories: 60, protein: 1.5, carbs: 9, fat: 2, fiber: 0 }],
+      'coffee': [{ food_name: 'Coffee with Milk', portion: '1 cup', calories: 70, protein: 2, carbs: 10, fat: 2.5, fiber: 0 }],
+      'milk': [{ food_name: 'Milk (Full Fat)', portion: '1 glass (250ml)', calories: 150, protein: 8, carbs: 12, fat: 8, fiber: 0 }],
+      'paneer': [{ food_name: 'Paneer', portion: '100g', calories: 265, protein: 18, carbs: 3.6, fat: 20, fiber: 0 }],
+      'curd': [{ food_name: 'Curd (Yogurt)', portion: '1 cup (200g)', calories: 120, protein: 8, carbs: 9.5, fat: 5.5, fiber: 0 }],
+      'dahi': [{ food_name: 'Dahi (Curd/Yogurt)', portion: '1 cup (200g)', calories: 120, protein: 8, carbs: 9.5, fat: 5.5, fiber: 0 }],
+      'paratha': [{ food_name: 'Plain Paratha', portion: '1 medium', calories: 220, protein: 4.5, carbs: 30, fat: 9, fiber: 2 }],
+      'idli': [{ food_name: 'Idli', portion: '2 pieces', calories: 130, protein: 4, carbs: 25, fat: 1, fiber: 1.5 }],
+      'dosa': [{ food_name: 'Plain Dosa', portion: '1 medium', calories: 170, protein: 4, carbs: 28, fat: 4.5, fiber: 1 }],
+      'poha': [{ food_name: 'Poha', portion: '1 plate (200g)', calories: 250, protein: 5, carbs: 45, fat: 6, fiber: 2 }],
+      'upma': [{ food_name: 'Upma', portion: '1 bowl (200g)', calories: 230, protein: 5, carbs: 35, fat: 7, fiber: 2.5 }],
+      'oats': [{ food_name: 'Cooked Oats', portion: '1 bowl (200g)', calories: 160, protein: 6, carbs: 27, fat: 3.5, fiber: 4 }],
+      'papaya': [{ food_name: 'Papaya', portion: '1 cup (150g)', calories: 60, protein: 0.7, carbs: 15, fat: 0.2, fiber: 2.5 }],
+      'orange': [{ food_name: 'Orange', portion: '1 medium', calories: 62, protein: 1.2, carbs: 15, fat: 0.2, fiber: 3.1 }],
+      'mango': [{ food_name: 'Mango', portion: '1 cup (165g)', calories: 99, protein: 1.4, carbs: 25, fat: 0.6, fiber: 2.6 }],
+      'chicken breast': [{ food_name: 'Chicken Breast (Grilled)', portion: '100g', calories: 165, protein: 31, carbs: 0, fat: 3.6, fiber: 0 }],
+      'whey protein': [{ food_name: 'Whey Protein Shake', portion: '1 scoop (30g)', calories: 120, protein: 24, carbs: 3, fat: 1.5, fiber: 0 }],
+      'protein shake': [{ food_name: 'Whey Protein Shake', portion: '1 scoop (30g)', calories: 120, protein: 24, carbs: 3, fat: 1.5, fiber: 0 }],
+      'peanut butter': [{ food_name: 'Peanut Butter', portion: '2 tbsp (32g)', calories: 190, protein: 7, carbs: 7, fat: 16, fiber: 2 }],
+      'almonds': [{ food_name: 'Almonds', portion: '1 handful (28g)', calories: 164, protein: 6, carbs: 6, fat: 14, fiber: 3.5 }],
+      'bread': [{ food_name: 'Bread (White)', portion: '2 slices', calories: 160, protein: 5, carbs: 30, fat: 2, fiber: 1.5 }],
+    };
+    // Try to match common foods with quantity multiplier
+    function matchCommonFood(text) {
+      const lower = text.toLowerCase().trim();
+      // Extract quantity: "2 roti", "3 eggs", "100g paneer"
+      const qtyMatch = lower.match(/^(\d+\.?\d*)\s*(g|kg|ml|cup|cups|glass|plate|bowl|piece|pieces|slice|slices|scoop|scoops|tbsp)?\s*(.+)/);
+      let qty = 1, unit = '', foodKey = lower;
+      if (qtyMatch) {
+        qty = parseFloat(qtyMatch[1]);
+        unit = qtyMatch[2] || '';
+        foodKey = qtyMatch[3].trim();
+      }
+      // Direct match
+      if (commonFoods[foodKey]) {
+        const base = commonFoods[foodKey][0];
+        // Handle gram-based quantities
+        if (unit === 'g' && base.portion.includes('g')) {
+          const baseGrams = parseFloat(base.portion.match(/(\d+)g/)?.[1] || 100);
+          const multiplier = qty / baseGrams;
+          return [{ ...base, portion: qty + 'g', calories: Math.round(base.calories * multiplier), protein: r(base.protein * multiplier), carbs: r(base.carbs * multiplier), fat: r(base.fat * multiplier), fiber: r(base.fiber * multiplier) }];
+        }
+        // Handle count-based: "2 roti", "3 eggs"
+        if (qty !== 1 && !unit) {
+          return [{ ...base, portion: qty + ' × ' + base.portion, calories: Math.round(base.calories * qty), protein: r(base.protein * qty), carbs: r(base.carbs * qty), fat: r(base.fat * qty), fiber: r(base.fiber * qty) }];
+        }
+        return [{ ...base }];
+      }
+      // Plural match: "eggs" → "egg", "rotis" → "roti"
+      const singular = foodKey.replace(/s$/, '').replace(/ies$/, 'y');
+      if (commonFoods[singular]) {
+        const base = commonFoods[singular][0];
+        if (qty !== 1) {
+          return [{ ...base, portion: qty + ' × ' + base.portion, calories: Math.round(base.calories * qty), protein: r(base.protein * qty), carbs: r(base.carbs * qty), fat: r(base.fat * qty), fiber: r(base.fiber * qty) }];
+        }
+        return [{ ...base }];
+      }
+      return null; // Not found — use AI
+    }
     // Add Food
     async function analyzeFood() {
       const input = document.getElementById('foodInput');
@@ -3355,19 +3425,28 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
       const btn = document.getElementById('sendBtn');
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
-        const prompt = `Analyze this food and return ONLY valid JSON (no markdown, no explanation). Be accurate for Indian foods (roti, dal, sabzi, biryani, paneer, chai, paratha, dosa, idli, etc). Return an array of food items:
+        // Try instant local cache first
+        const cached = matchCommonFood(food);
+        let items;
+        if (cached) {
+          items = cached;
+        } else {
+          showToast('🤖 Analyzing with AI...', 'info');
+          const prompt = `Analyze this food and return ONLY valid JSON (no markdown, no explanation). Be accurate for Indian foods (roti, dal, sabzi, biryani, paneer, chai, paratha, dosa, idli, etc). Return an array of food items:
 [{"food_name":"name","portion":"amount","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]
 Food: ${food}`;
-        const text = await callAI('You are a nutrition analysis AI. Return ONLY valid JSON arrays.', prompt);
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error('Could not parse AI response');
-        const items = JSON.parse(jsonMatch[0]);
-        for (const item of items) {
-          const { error } = await sb.from('meals').insert({ user_id: userId, date: fmt(currentDate), food_name: item.food_name, portion: item.portion || '', calories: Math.round(item.calories || 0), protein: r(item.protein || 0), carbs: r(item.carbs || 0), fat: r(item.fat || 0), fiber: r(item.fiber || 0) });
-          if (error) throw error;
+          const text = await callAI('You are a nutrition analysis AI. Return ONLY valid JSON arrays.', prompt);
+          const jsonMatch = text.match(/\[[\s\S]*\]/);
+          if (!jsonMatch) throw new Error('Could not parse AI response');
+          items = JSON.parse(jsonMatch[0]);
         }
+        // Insert all items in parallel (not one by one)
+        await Promise.all(items.map(item =>
+          sb.from('meals').insert({ user_id: userId, date: fmt(currentDate), food_name: item.food_name, portion: item.portion || '', calories: Math.round(item.calories || 0), protein: r(item.protein || 0), carbs: r(item.carbs || 0), fat: r(item.fat || 0), fiber: r(item.fiber || 0) })
+            .then(({ error }) => { if (error) throw error; })
+        ));
         input.value = '';
-        showToast(items.length + ' item(s) logged! ✅', 'success');
+        showToast(items.length + ' item(s) logged! ✅' + (cached ? ' ⚡' : ''), 'success');
         loadDay(); loadWeekChart();
       } catch (e) { showToast('Error: ' + e.message, 'error') }
       finally { btn.disabled = false; btn.innerHTML = '➕' }
