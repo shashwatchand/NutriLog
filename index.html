@@ -3238,7 +3238,7 @@
     async function geminiCall(body, retries = 3) {
       const key = LS.getItem('geminiKey');
       if (!key) throw new Error('Gemini API key not set. Go to Settings to add it.');
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=' + key;
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=' + key;
       for (let i = 0; i <= retries; i++) {
         try {
           const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -3253,13 +3253,13 @@
           const errMsg = err.error?.message || '';
           if (res.status === 429 && i < retries) {
             const waitMatch = errMsg.match(/retry in (\d+(\.\d+)?)/i);
-            const wait = waitMatch ? Math.ceil(parseFloat(waitMatch[1])) + 2 : [10, 20, 40][i];
-            showToast('⏳ Rate limited by Google, retrying in ' + wait + 's...', 'info');
+            const wait = waitMatch ? Math.ceil(parseFloat(waitMatch[1])) + 1 : [5, 10, 20][i];
+            showToast('⏳ Rate limited, retrying in ' + wait + 's...', 'info');
             await new Promise(r => setTimeout(r, wait * 1000));
             continue;
           }
           if (res.status >= 500 && i < retries) {
-            const wait = [3, 8, 15][i];
+            const wait = [2, 5, 10][i];
             showToast('⏳ Gemini server error, retrying in ' + wait + 's...', 'info');
             await new Promise(r => setTimeout(r, wait * 1000));
             continue;
@@ -3267,7 +3267,7 @@
           throw new Error(errMsg || 'Gemini API error (HTTP ' + res.status + ')');
         } catch (e) {
           if (e.message.includes('fetch') && i < retries) {
-            const wait = [3, 6, 12][i];
+            const wait = [2, 4, 8][i];
             showToast('⏳ Network error, retrying in ' + wait + 's...', 'info');
             await new Promise(r => setTimeout(r, wait * 1000));
             continue;
