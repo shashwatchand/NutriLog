@@ -1,7 +1,7 @@
-const CACHE_NAME = 'nutritrack-v2';
+const CACHE_NAME = 'nutritrack-v3';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
+  './',
+  './index.html',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
   'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'

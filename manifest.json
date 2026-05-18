@@ -2,10 +2,11 @@
   "name": "NutriTrack — AI Diet Tracker",
   "short_name": "NutriTrack",
   "description": "AI-powered diet tracker with macro tracking, meal planning, and barcode scanning",
-  "start_url": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#0a0a0f",
-  "theme_color": "#0a0a0f",
+  "background_color": "#070B14",
+  "theme_color": "#070B14",
   "orientation": "portrait",
   "icons": [
     {
