@@ -571,7 +571,10 @@
       padding: 16px 0 12px;
     }
 
-    .hero-greeting-left {}
+    .hero-greeting-left {
+      display: flex;
+      flex-direction: column;
+    }
 
     .hero-greeting .greeting-text {
       font-family: 'Poppins', sans-serif;
@@ -1225,17 +1228,20 @@
     .food-dropdown {
       position: absolute;
       top: calc(100% + 4px);
-      left: 0; right: 0;
+      left: 0;
+      right: 0;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 14px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.06);
       z-index: 200;
       overflow: hidden;
       display: none;
     }
 
-    .food-dropdown.open { display: block; }
+    .food-dropdown.open {
+      display: block;
+    }
 
     .food-db-item {
       display: flex;
@@ -1245,19 +1251,25 @@
       cursor: pointer;
       gap: 12px;
       transition: background .15s ease;
-      border-bottom: 1px solid rgba(0,0,0,0.04);
+      border-bottom: 1px solid rgba(0, 0, 0, 0.04);
     }
 
-    .food-db-item:last-child { border-bottom: none; }
+    .food-db-item:last-child {
+      border-bottom: none;
+    }
 
-    .food-db-item:hover { background: rgba(15,118,110,0.05); }
+    .food-db-item:hover {
+      background: rgba(15, 118, 110, 0.05);
+    }
 
     .food-db-item.ai-fallback {
       background: #F9FAFB;
       border-top: 1px solid var(--border);
     }
 
-    .food-db-item.ai-fallback:hover { background: #F1F5F9; }
+    .food-db-item.ai-fallback:hover {
+      background: #F1F5F9;
+    }
 
     .fdi-name {
       font-size: 13px;
@@ -1303,10 +1315,12 @@
       border-radius: 16px;
       padding: 14px 16px;
       box-shadow: var(--shadow);
-      animation: cardMount .3s cubic-bezier(0.22,1,0.36,1) both;
+      animation: cardMount .3s cubic-bezier(0.22, 1, 0.36, 1) both;
     }
 
-    .food-portion-panel.open { display: block; }
+    .food-portion-panel.open {
+      display: block;
+    }
 
     .fpp-name {
       font-size: 14px;
@@ -1383,7 +1397,10 @@
       line-height: 1;
     }
 
-    .fpp-stat.kcal .fpp-stat-val { color: var(--accent); font-size: 20px; }
+    .fpp-stat.kcal .fpp-stat-val {
+      color: var(--accent);
+      font-size: 20px;
+    }
 
     .fpp-stat-label {
       font-size: 9px;
@@ -1622,6 +1639,7 @@
       margin-bottom: 14px;
       user-select: none;
     }
+
     .week-nav-chevron {
       font-size: 11px;
       color: var(--text3);
@@ -1631,20 +1649,24 @@
       transition: all .2s;
       line-height: 1;
     }
+
     .week-nav-chevron:hover {
       color: var(--accent);
       background: rgba(15, 118, 110, 0.06);
     }
+
     .week-nav-chevron.disabled {
       opacity: 0.2;
       pointer-events: none;
     }
+
     .week-nav-center {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 1px;
     }
+
     .week-nav-label {
       font-family: 'Poppins', sans-serif;
       font-size: 13px;
@@ -1652,11 +1674,13 @@
       color: var(--text);
       letter-spacing: -0.01em;
     }
+
     .week-nav-sub {
       font-size: 10px;
       color: var(--label);
       font-weight: 400;
     }
+
     .chart-bar-date {
       font-size: 9px;
       color: var(--text3);
@@ -1669,22 +1693,41 @@
       position: relative;
       overflow: hidden;
     }
+
     .chart-bars {
       transition: transform .35s cubic-bezier(0.22, 1, 0.36, 1), opacity .25s ease;
     }
+
     .chart-bars.slide-left {
       animation: slideLeft .35s cubic-bezier(0.22, 1, 0.36, 1);
     }
+
     .chart-bars.slide-right {
       animation: slideRight .35s cubic-bezier(0.22, 1, 0.36, 1);
     }
+
     @keyframes slideLeft {
-      from { transform: translateX(60px); opacity: 0 }
-      to { transform: translateX(0); opacity: 1 }
+      from {
+        transform: translateX(60px);
+        opacity: 0
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1
+      }
     }
+
     @keyframes slideRight {
-      from { transform: translateX(-60px); opacity: 0 }
-      to { transform: translateX(0); opacity: 1 }
+      from {
+        transform: translateX(-60px);
+        opacity: 0
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1
+      }
     }
 
     /* Week scrollbar track */
@@ -1699,6 +1742,7 @@
       user-select: none;
       -webkit-user-select: none;
     }
+
     .week-scroll-track {
       position: absolute;
       left: 0;
@@ -1709,6 +1753,7 @@
       top: 50%;
       transform: translateY(-50%);
     }
+
     .week-scroll-thumb {
       position: absolute;
       width: 48px;
@@ -1724,18 +1769,21 @@
       justify-content: center;
       z-index: 2;
     }
+
     .week-scroll-thumb:active {
       cursor: grabbing;
       box-shadow: 0 2px 12px rgba(15, 118, 110, 0.35);
       width: 52px;
     }
+
     .week-scroll-thumb::after {
       content: '';
       width: 16px;
       height: 3px;
-      background: rgba(255,255,255,0.6);
+      background: rgba(255, 255, 255, 0.6);
       border-radius: 2px;
     }
+
     .week-scroll-ticks {
       position: absolute;
       left: 0;
@@ -1747,22 +1795,26 @@
       padding: 0 24px;
       pointer-events: none;
     }
+
     .week-scroll-tick {
       width: 2px;
       height: 6px;
       background: #D1D5DB;
       border-radius: 1px;
     }
+
     .week-scroll-tick.active {
       background: var(--accent);
       height: 8px;
     }
+
     .week-scroll-labels {
       display: flex;
       justify-content: space-between;
       padding: 0 16px;
       margin-top: 2px;
     }
+
     .week-scroll-edge-label {
       font-size: 9px;
       color: var(--text3);
@@ -2860,10 +2912,22 @@
       }
 
       /* Food DB components on mobile */
-      .fpp-stat-val { font-size: 13px; }
-      .fpp-stat { padding: 5px 8px; min-width: 44px; }
-      .food-db-item { padding: 9px 12px; }
-      .fdi-meta { display: none; }
+      .fpp-stat-val {
+        font-size: 13px;
+      }
+
+      .fpp-stat {
+        padding: 5px 8px;
+        min-width: 44px;
+      }
+
+      .food-db-item {
+        padding: 9px 12px;
+      }
+
+      .fdi-meta {
+        display: none;
+      }
 
       .macro-card .label {
         font-size: 10px;
@@ -3629,6 +3693,7 @@
       font-weight: 800;
       background: linear-gradient(135deg, var(--orange), var(--red));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent
     }
 
@@ -4872,8 +4937,8 @@
         </div>
         <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="handlePhoto(event)">
         <div class="food-input-wrap" id="foodInputWrap">
-          <textarea id="foodInput" placeholder="Search 1,000+ Indian foods or describe anything..."
-            rows="1" autocomplete="off"></textarea>
+          <textarea id="foodInput" placeholder="Search 1,000+ Indian foods or describe anything..." rows="1"
+            autocomplete="off"></textarea>
           <button class="food-send-btn" id="sendBtn" onclick="analyzeFood()">➕</button>
           <!-- Live search dropdown -->
           <div class="food-dropdown" id="foodDropdown"></div>
@@ -4883,13 +4948,16 @@
           <div class="fpp-name" id="fppName"></div>
           <div class="fpp-controls">
             <span class="fpp-weight-label">Weight</span>
-            <input class="fpp-weight-input" id="fppWeightInput" type="number" value="100" min="1" max="2000" oninput="syncFppSlider()">
+            <input class="fpp-weight-input" id="fppWeightInput" type="number" value="100" min="1" max="2000"
+              oninput="syncFppSlider()">
             <span class="fpp-weight-label">g</span>
-            <input class="fpp-slider" id="fppSlider" type="range" min="1" max="500" value="100" oninput="syncFppInput()">
+            <input class="fpp-slider" id="fppSlider" type="range" min="1" max="500" value="100"
+              oninput="syncFppInput()">
           </div>
           <div class="fpp-preview" id="fppPreview"></div>
           <div class="fpp-actions">
-            <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="addDBMeal()">+ Add to Log</button>
+            <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="addDBMeal()">+ Add to
+              Log</button>
             <button class="btn btn-secondary btn-sm" onclick="closePortion()">Cancel</button>
           </div>
         </div>
@@ -5717,11 +5785,11 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
     function updateFppPreview(grams) {
       if (!_fppFood) return;
       const m = grams / 100;
-      const cal  = Math.round(_fppFood.c * m);
+      const cal = Math.round(_fppFood.c * m);
       const prot = Math.round(_fppFood.p * m * 10) / 10;
       const carb = Math.round(_fppFood.cb * m * 10) / 10;
-      const fat  = Math.round(_fppFood.f * m * 10) / 10;
-      const fib  = Math.round(_fppFood.fb * m * 10) / 10;
+      const fat = Math.round(_fppFood.f * m * 10) / 10;
+      const fib = Math.round(_fppFood.fb * m * 10) / 10;
       const el = document.getElementById('fppPreview');
       if (!el) return;
       el.innerHTML = `
@@ -5775,7 +5843,7 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
         if (error) throw error;
         showToast('✅ ' + foodName.split(' ')[0] + ' logged!', 'success');
         loadDay(); loadWeekChart();
-      } catch(e) { showToast('Failed to log: ' + e.message, 'error'); }
+      } catch (e) { showToast('Failed to log: ' + e.message, 'error'); }
     }
 
     // Wire up food input for live search
@@ -5960,7 +6028,6 @@ Food: ${food}`;
         (data || []).forEach(m => byDay[m.date] = (byDay[m.date] || 0) + (m.calories || 0));
         const totalLogged = Object.values(byDay).reduce((a, b) => a + b, 0);
         const chartEl = document.getElementById('weekChart');
-        if (!chartEl) return;
         if (totalLogged === 0) {
           chartEl.innerHTML = `<div class="empty-state" style="padding:24px 16px;width:100%">
   <div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="10" width="4" height="10" rx="1"/><rect x="9" y="6" width="4" height="14" rx="1"/><rect x="16" y="2" width="4" height="18" rx="1"/></svg></div>
@@ -6002,7 +6069,6 @@ Food: ${food}`;
         // Draw goal line
         const goalPct = goals.cal > 0 ? (goals.cal / max * 100) : 0;
         const chartInner = document.getElementById('chartInner');
-        if (!chartInner) return;
         let goalLine = chartInner.querySelector('.chart-goal-line');
         if (!goalLine) {
           goalLine = document.createElement('div');
