@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Sora:wght@400;500;600;700&family=Manrope:wght@400;500&display=swap"
     rel="stylesheet">
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -4771,7 +4771,7 @@
         </div>
         <div class="net-cal-divider">=</div>
         <div class="net-cal-item net">
-          <div class="net-label">Deficit</div>
+          <div class="net-label" id="netLabel">Deficit</div>
           <div class="net-value" id="netTotal">0</div>
           <div class="net-unit">kcal</div>
         </div>
@@ -5454,7 +5454,7 @@
       }
     }
     // Date
-    function changeDate(d) { currentDate.setDate(currentDate.getDate() + d); loadDay(); loadWeekChart() }
+    function changeDate(d) { currentDate.setDate(currentDate.getDate() + d); loadDay(); loadWeekChart(); loadStreaks(); }
     async function loadDay() {
       const ds = fmt(currentDate);
       const today = fmt(new Date());
@@ -5486,7 +5486,9 @@
 </div>`;
         return;
       }
-      el.innerHTML = '<div class="section-title">🍽️ Today\'s Meals (' + meals.length + ')</div>' + meals.map(m => `
+      const isToday = fmt(currentDate) === fmt(new Date());
+      const mealDateLabel = isToday ? 'Today\'s Meals' : currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' Meals';
+      el.innerHTML = '<div class="section-title">🍽️ ' + mealDateLabel + ' (' + meals.length + ')</div>' + meals.map(m => `
 <div class="meal-item" onclick="toggleMealExpand(event, this)">
 <div class="meal-item-row">
 <div class="meal-info">
@@ -5648,9 +5650,10 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
       if (typeof FOOD_DB === 'undefined' || !query || query.length < 2) return [];
       const words = query.toLowerCase().trim().split(/\s+/);
       const results = [];
-      for (const food of FOOD_DB) {
+      for (let idx = 0; idx < FOOD_DB.length; idx++) {
+        const food = FOOD_DB[idx];
         const name = food.n.toLowerCase();
-        if (words.every(w => name.includes(w))) results.push(food);
+        if (words.every(w => name.includes(w))) results.push({ ...food, _idx: idx });
         if (results.length >= 8) break;
       }
       // Bubble starts-with matches to top
@@ -5676,7 +5679,7 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
       if (!results.length) { dd.classList.remove('open'); return; }
       dd.innerHTML = `<div class="food-dd-header">Indian Food Database — per 100g</div>` +
         results.map((food, i) => `
-          <div class="food-db-item" onclick="selectDBFood(${FOOD_DB.indexOf(food)})">
+          <div class="food-db-item" onclick="selectDBFood(${food._idx})">
             <span class="fdi-name">${esc(food.n)}</span>
             <span class="fdi-meta">
               <span class="fdi-kcal">${food.c}</span>
@@ -5859,6 +5862,7 @@ Food: ${food}`;
       const barW = bar.offsetWidth;
       const thumbW = thumb.offsetWidth;
       const usable = barW - thumbW;
+      if (usable <= 0) return; // Guard against NaN when element is hidden
       // weekOffset: 0 = rightmost, -WEEK_RANGE = leftmost
       const pct = (weekOffset + WEEK_RANGE) / WEEK_RANGE;
       thumb.style.left = (pct * usable) + 'px';
@@ -6127,14 +6131,14 @@ ${summary}
 
 Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good 3) What to improve 4) Suggestion for remaining meals today.`;
         const aiText = await callAI('You are a nutrition analysis expert.', userMsg);
-        document.getElementById('aiContent').innerHTML = '<div class="ai-result">' + esc(aiText) + '</div>';
+        document.getElementById('aiContent').innerHTML = '<div class="ai-result" style="white-space:pre-wrap;line-height:1.7">' + esc(aiText).replace(/\n/g, '<br>') + '</div>';
       } catch (e) { document.getElementById('aiContent').innerHTML = '<div class="ai-result" style="color:var(--red)">Error: ' + esc(e.message) + '</div>' }
     }
     // Export CSV
     async function exportCSV() {
       showToast('Exporting...', 'info');
       try {
-        const { data, error } = await sb.from('meals').select('*').eq('user_id', userId).order('date', { ascending: false });
+        const { data, error } = await sb.from('meals').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(50000);
         if (error) throw error;
         if (!data || !data.length) { showToast('No data to export', 'error'); return }
         const headers = 'Date,Food,Portion,Calories,Protein,Carbs,Fat,Fiber\n';
@@ -6242,7 +6246,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
         const now = new Date();
         const first = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
         const last = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-        const { data } = await sb.from('meals').select('*').eq('user_id', userId).gte('date', first).lte('date', last);
+        const { data } = await sb.from('meals').select('*').eq('user_id', userId).gte('date', first).lte('date', last).limit(5000);
         if (!data || !data.length) { el.innerHTML = '<div class="empty-state"><div class="emoji">📊</div><p>No data this month yet</p></div>'; return }
         const byDay = {}; let totalCal = 0, totalProt = 0, totalCarb = 0, totalFat = 0, totalFib = 0;
         const foodCount = {};
@@ -6350,10 +6354,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
             setTimeout(() => banner.classList.remove('show'), 3800);
           }
         }
-        const goalsMetDays = uniqueDates.filter(d => {
-          const dayMeals = data.filter(m => m.date === d);
-          return dayMeals.length > 0;
-        }).length;
+        // goalsMetDays removed — was dead code
         let html = '<div class="streak-display">';
         html += '<div class="streak-fire">🔥</div>';
         html += '<div class="streak-num">' + current + '</div>';
@@ -6627,7 +6628,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       });
       // Attach tooltip listeners
       canvas.onmousemove = canvas.ontouchmove = function (e) {
-        e.preventDefault();
+        if (e.type === 'mousemove') e.preventDefault(); // Don't block touch scrolling
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -6963,7 +6964,7 @@ Foods the user likes: ${recentFoods.join(', ') || 'Not enough history'}
 
 Suggest practical Indian meals that fit the remaining macros and diet mode. For each meal give: name, approximate portion, and estimated macros. Keep it brief and actionable. Format as a readable list, not JSON.`;
         const planText = await callAI('You are an Indian nutrition and meal planning expert.', planPrompt);
-        document.getElementById('plannerContent').innerHTML = '<div class="planner-result">' + esc(planText) + '</div>';
+        document.getElementById('plannerContent').innerHTML = '<div class="planner-result" style="white-space:pre-wrap;line-height:1.7">' + esc(planText).replace(/\n/g, '<br>') + '</div>';
       } catch (e) { document.getElementById('plannerContent').innerHTML = '<div style="color:var(--red);padding:12px">Error: ' + esc(e.message) + '</div>' }
       finally { btn.disabled = false; btn.innerHTML = '✨ Generate Meal Plan' }
     }
@@ -7063,7 +7064,10 @@ Suggest practical Indian meals that fit the remaining macros and diet mode. For 
       container.innerHTML = msgs.map(m => {
         if (m.role === 'user') return '<div class="chat-msg user">' + esc(m.text) + '</div>';
         let html = '<div class="chat-msg ai">' + esc(m.text);
-        if (m.food) html += '<br><button class="chat-add-btn" onclick=\'logFoodFromChat(' + JSON.stringify(m.food).replace(/'/g, "\\'") + ')\'>➕ Add ' + esc(m.food.food_name) + ' to log</button>';
+        if (m.food) {
+          const safeFood = esc(JSON.stringify(m.food));
+          html += '<br><button class="chat-add-btn" data-food="' + safeFood + '" onclick="logFoodFromChat(JSON.parse(this.dataset.food))">➕ Add ' + esc(m.food.food_name) + ' to log</button>';
+        }
         html += '</div>';
         return html;
       }).join('');
@@ -7320,12 +7324,15 @@ Activities: ${text}`;
       countUp(document.getElementById('netBurned'), Math.round(totalBurn));
       countUp(document.getElementById('netEaten'), Math.round(todayEaten));
       const netEl = document.getElementById('netTotal');
+      const netLabel = document.getElementById('netLabel');
       if (deficit >= 0) {
         countUp(netEl, Math.round(deficit));
         netEl.style.color = 'var(--green)';
+        if (netLabel) netLabel.textContent = 'DEFICIT';
       } else {
         countUp(netEl, Math.round(Math.abs(deficit)));
         netEl.style.color = 'var(--red)';
+        if (netLabel) netLabel.textContent = 'SURPLUS';
       }
       updateCalorieRing(todayEaten, totalBurn, goals.cal);
       updateGreeting();
@@ -7464,7 +7471,15 @@ Activities: ${text}`;
     document.addEventListener('DOMContentLoaded', () => {
       init();
       const foodInputEl = document.getElementById('foodInput');
-      foodInputEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); hideFoodDropdown(); analyzeFood(); } });
+      foodInputEl.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          const dd = document.getElementById('foodDropdown');
+          const firstItem = dd && dd.classList.contains('open') && dd.querySelector('.food-db-item:not(.ai-fallback)');
+          if (firstItem) { firstItem.click(); } // Select first DB match
+          else { hideFoodDropdown(); analyzeFood(); } // Fall back to AI
+        }
+      });
       foodInputEl.addEventListener('input', onFoodInput);
       foodInputEl.addEventListener('focus', e => { if (e.target.value.trim().length >= 2) showFoodDropdown(e.target.value.trim()); });
       // Close dropdown when clicking outside

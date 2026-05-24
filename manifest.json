@@ -1,12 +1,12 @@
 {
-  "name": "NutriTrack — AI Diet Tracker",
-  "short_name": "NutriTrack",
+  "name": "NutriLog — AI Diet Tracker",
+  "short_name": "NutriLog",
   "description": "AI-powered diet tracker with macro tracking, meal planning, and barcode scanning",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#070B14",
-  "theme_color": "#070B14",
+  "background_color": "#FAFAF7",
+  "theme_color": "#FAFAF7",
   "orientation": "portrait",
   "icons": [
     {

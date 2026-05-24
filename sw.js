@@ -1,8 +1,8 @@
-const CACHE_NAME = 'nutritrack-v5';
+const CACHE_NAME = 'nutrilog-v6';
 const STATIC_ASSETS = [
   './',
   './index.html',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Sora:wght@400;500;600;700&family=Manrope:wght@400;500&display=swap',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
   'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
   './food_db.js'
@@ -21,10 +21,26 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Network-first for API calls, cache-first for static assets
-  if (event.request.url.includes('api.anthropic.com') || event.request.url.includes('supabase') || event.request.url.includes('openfoodfacts') || event.request.url.includes('generativelanguage.googleapis.com')) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  const url = event.request.url;
+  // Network-first for API calls AND for index.html (so users always get latest version)
+  const isAPI = url.includes('api.anthropic.com') || url.includes('supabase') || url.includes('openfoodfacts') || url.includes('generativelanguage.googleapis.com');
+  const isHTML = event.request.mode === 'navigate' || url.endsWith('.html') || url.endsWith('/');
+
+  if (isAPI || isHTML) {
+    event.respondWith(
+      fetch(event.request)
+        .then(res => {
+          // Cache the fresh HTML for offline fallback
+          if (isHTML) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(event.request))
+    );
   } else {
+    // Cache-first for static assets (fonts, JS libs, food_db)
     event.respondWith(
       caches.match(event.request).then(cached => cached || fetch(event.request).then(res => {
         const clone = res.clone();
