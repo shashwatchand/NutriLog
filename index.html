@@ -6287,18 +6287,34 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       const el = document.getElementById('streakContent');
       el.innerHTML = '<div style="text-align:center;padding:20px"><div class="spinner"></div></div>';
       try {
-        const { data } = await sb.from('meals').select('date').eq('user_id', userId).order('date', { ascending: false });
+        // Fetch all meal dates with high limit to ensure full history
+        const { data } = await sb.from('meals').select('date').eq('user_id', userId).order('date', { ascending: false }).limit(5000);
         const heroStreakEl = document.getElementById('heroStreakNum');
         if (!data || !data.length) { el.innerHTML = '<div class="streak-display"><div class="streak-fire">🔥</div><div class="streak-num">0</div><div class="streak-label">day streak</div><p style="margin-top:16px;color:var(--text2);font-size:13px">Log your first meal to start!</p></div>'; if (heroStreakEl) heroStreakEl.textContent = '0'; return }
         const uniqueDates = [...new Set(data.map(m => m.date))].sort().reverse();
         const today = fmt(new Date());
+        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = fmt(yesterday);
+        // Calculate current streak — allow starting from today OR yesterday
         let current = 0, best = 0, streak = 0;
-        for (let i = 0; i < uniqueDates.length; i++) {
-          const expected = new Date(); expected.setDate(expected.getDate() - i);
-          if (uniqueDates[i] === fmt(expected)) { streak++ }
-          else break;
+        let startOffset = 0;
+        // If today isn't logged yet, check if yesterday was logged (streak still alive)
+        if (uniqueDates[0] === today) {
+          startOffset = 0; // start counting from today
+        } else if (uniqueDates[0] === yesterdayStr) {
+          startOffset = 1; // start counting from yesterday (today not yet logged)
+        } else {
+          startOffset = -1; // streak is broken
+        }
+        if (startOffset >= 0) {
+          for (let i = 0; i < uniqueDates.length; i++) {
+            const expected = new Date(); expected.setDate(expected.getDate() - i - startOffset);
+            if (uniqueDates[i] === fmt(expected)) { streak++ }
+            else break;
+          }
         }
         current = streak;
+        // Calculate best streak across all history
         streak = 1;
         for (let i = 1; i < uniqueDates.length; i++) {
           const prev = new Date(uniqueDates[i - 1] + 'T12:00:00');
@@ -6320,7 +6336,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
           }
         }
         // Milestone celebration
-        const MILESTONES = [3, 7, 14, 30, 60, 100];
+        const MILESTONES = [3, 7, 14, 21, 30, 60, 100];
         const lastKey = 'lastStreakCel_' + userId;
         const lastCel = parseInt(LS.getItem(lastKey) || '0');
         const milestone = MILESTONES.slice().reverse().find(m => current >= m);
