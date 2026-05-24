@@ -5290,7 +5290,7 @@
         renderPresetGrid();
         updateQuickWeight();
         // Run all cloud loads in parallel for faster startup
-        Promise.all([
+        await Promise.all([
           loadGoalsFromCloud(),
           loadWeightsFromCloud(),
           loadDay(),
@@ -5960,6 +5960,7 @@ Food: ${food}`;
         (data || []).forEach(m => byDay[m.date] = (byDay[m.date] || 0) + (m.calories || 0));
         const totalLogged = Object.values(byDay).reduce((a, b) => a + b, 0);
         const chartEl = document.getElementById('weekChart');
+        if (!chartEl) return;
         if (totalLogged === 0) {
           chartEl.innerHTML = `<div class="empty-state" style="padding:24px 16px;width:100%">
   <div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="10" width="4" height="10" rx="1"/><rect x="9" y="6" width="4" height="14" rx="1"/><rect x="16" y="2" width="4" height="18" rx="1"/></svg></div>
@@ -6001,6 +6002,7 @@ Food: ${food}`;
         // Draw goal line
         const goalPct = goals.cal > 0 ? (goals.cal / max * 100) : 0;
         const chartInner = document.getElementById('chartInner');
+        if (!chartInner) return;
         let goalLine = chartInner.querySelector('.chart-goal-line');
         if (!goalLine) {
           goalLine = document.createElement('div');
@@ -6813,6 +6815,10 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
     }
     async function capturePhoto() {
       const video = document.getElementById('cameraVideo');
+      if (!video.videoWidth || !video.videoHeight) {
+        showToast('Camera not ready, try again', 'error');
+        return;
+      }
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
