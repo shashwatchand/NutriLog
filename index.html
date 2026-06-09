@@ -5390,19 +5390,20 @@
     function showToast(msg, type = 'info') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.getElementById('toasts').appendChild(t); setTimeout(() => t.remove(), 3500) }
     function closeModal(id) { document.getElementById(id).classList.remove('active') }
     // Activity Presets with MET values
+    // Quick-pick activities. Calories are estimated by AI at log time (no stored formula).
     const activityPresets = [
-      { emoji: '🏃', name: 'Running', met: 8.0 },
-      { emoji: '🚶', name: 'Walking', met: 3.5 },
-      { emoji: '🏋️', name: 'Gym', met: 6.0 },
-      { emoji: '🧘', name: 'Yoga', met: 3.0 },
-      { emoji: '🚴', name: 'Cycling', met: 7.5 },
-      { emoji: '🏊', name: 'Swimming', met: 7.0 },
-      { emoji: '🏸', name: 'Sports', met: 7.0 },
-      { emoji: '💃', name: 'Dancing', met: 5.0 },
-      { emoji: '🧹', name: 'Housework', met: 3.3 },
-      { emoji: '🪜', name: 'Stairs', met: 8.0 },
-      { emoji: '🏃‍♀️', name: 'HIIT', met: 10.0 },
-      { emoji: '🤸', name: 'Stretching', met: 2.5 }
+      { emoji: '🏃', name: 'Running' },
+      { emoji: '🚶', name: 'Walking' },
+      { emoji: '🏋️', name: 'Gym' },
+      { emoji: '🧘', name: 'Yoga' },
+      { emoji: '🚴', name: 'Cycling' },
+      { emoji: '🏊', name: 'Swimming' },
+      { emoji: '🏸', name: 'Sports' },
+      { emoji: '💃', name: 'Dancing' },
+      { emoji: '🧹', name: 'Housework' },
+      { emoji: '🪜', name: 'Stairs' },
+      { emoji: '🏃‍♀️', name: 'HIIT' },
+      { emoji: '🤸', name: 'Stretching' }
     ];
     // Init
     async function init() {
@@ -7416,30 +7417,49 @@ IMPORTANT RULES:
       document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
       document.getElementById('presetDurationRow').classList.remove('active');
     }
-    // Calculate calories burned: MET × weight(kg) × duration(hours)
-    function calcBurn(met, durationMin) {
-      return Math.round(met * bodyStats.weight * (durationMin / 60));
+    // AI estimates calories burned every time — no stored MET formula.
+    // Shared by the quick-add presets and the free-text describe box.
+    async function aiEstimateBurn(text) {
+      const prompt = `Estimate calories burned for these activities. User weighs ${bodyStats.weight}kg, is ${bodyStats.age} years old, ${bodyStats.height}cm tall, ${bodyStats.gender}.
+
+Return ONLY valid JSON array (no markdown): [{"activity_name":"name","duration_min":number,"calories_burned":number}]
+
+Activities: ${text}`;
+      const aiText = await callAI('You are a fitness and exercise calorie estimation expert. Return ONLY valid JSON arrays.', prompt);
+      const jsonMatch = aiText.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error('Could not parse AI response');
+      const items = JSON.parse(jsonMatch[0]);
+      let logged = 0;
+      for (const item of items) {
+        const { error } = await sb.from('activities').insert({
+          user_id: userId, date: fmt(currentDate),
+          activity_name: item.activity_name,
+          duration_min: Math.round(item.duration_min || 0),
+          calories_burned: Math.round(item.calories_burned || 0)
+        });
+        if (error) throw error;
+        logged++;
+      }
+      loadActivities();
+      updateNetCalories();
+      return logged;
     }
-    // Log preset activity
+    // Log a quick-add preset — AI estimates the calories.
     async function logPresetActivity() {
       if (!selectedPreset) { showToast('Select an activity first', 'error'); return; }
       const dur = parseInt(document.getElementById('presetDuration').value);
       if (!dur || dur < 1) { showToast('Enter duration in minutes', 'error'); return; }
-      const cal = calcBurn(selectedPreset.met, dur);
+      const logBtn = document.querySelector('#presetDurationRow .btn-primary');
+      const prevLabel = logBtn ? logBtn.innerHTML : '';
+      if (logBtn) { logBtn.disabled = true; logBtn.innerHTML = '…'; }
       try {
-        const { error } = await sb.from('activities').insert({
-          user_id: userId, date: fmt(currentDate),
-          activity_name: selectedPreset.name, duration_min: dur,
-          calories_burned: cal
-        });
-        if (error) throw error;
-        showToast(selectedPreset.emoji + ' ' + selectedPreset.name + ' — ' + cal + ' kcal burned! 🔥', 'success');
+        await aiEstimateBurn(dur + ' min ' + selectedPreset.name);
+        showToast(selectedPreset.emoji + ' ' + selectedPreset.name + ' logged! 🔥', 'success');
         cancelPreset();
-        loadActivities();
-        updateNetCalories();
       } catch (e) { showToast('Error: ' + e.message, 'error'); }
+      finally { if (logBtn) { logBtn.disabled = false; logBtn.innerHTML = prevLabel || 'Log'; } }
     }
-    // AI-based burn analysis
+    // AI-based burn analysis from a free-text description.
     async function analyzeBurn() {
       const input = document.getElementById('burnInput');
       const text = input.value.trim();
@@ -7447,28 +7467,9 @@ IMPORTANT RULES:
       const btn = document.getElementById('burnSendBtn');
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
-        const prompt = `Estimate calories burned for these activities. User weighs ${bodyStats.weight}kg, is ${bodyStats.age} years old, ${bodyStats.height}cm tall, ${bodyStats.gender}.
-
-Return ONLY valid JSON array (no markdown): [{"activity_name":"name","duration_min":number,"calories_burned":number}]
-
-Activities: ${text}`;
-        const aiText = await callAI('You are a fitness and exercise calorie estimation expert. Return ONLY valid JSON arrays.', prompt);
-        const jsonMatch = aiText.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error('Could not parse AI response');
-        const items = JSON.parse(jsonMatch[0]);
-        for (const item of items) {
-          const { error } = await sb.from('activities').insert({
-            user_id: userId, date: fmt(currentDate),
-            activity_name: item.activity_name,
-            duration_min: Math.round(item.duration_min || 0),
-            calories_burned: Math.round(item.calories_burned || 0)
-          });
-          if (error) throw error;
-        }
+        const count = await aiEstimateBurn(text);
         input.value = '';
-        showToast(items.length + ' activity(s) logged! 🔥', 'success');
-        loadActivities();
-        updateNetCalories();
+        showToast(count + ' activity(s) logged! 🔥', 'success');
       } catch (e) { showToast('Error: ' + e.message, 'error'); }
       finally { btn.disabled = false; btn.innerHTML = '🔥'; }
     }
