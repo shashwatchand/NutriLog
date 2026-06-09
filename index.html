@@ -5602,11 +5602,23 @@
         return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, system: systemPrompt, messages: [{ role: 'user', content: userMessage }] });
       }
     }
+    // JSON-only variant used for logging (food + exercise). Forces clean, parseable JSON:
+    //  - Gemini: responseMimeType application/json
+    //  - Claude: assistant-turn prefill "[" so the reply is a pure JSON array (no preamble)
+    async function callAIJSON(systemPrompt, userMessage) {
+      if (aiProvider === 'gemini') {
+        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
+      } else {
+        const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, system: systemPrompt, messages: [{ role: 'user', content: userMessage }, { role: 'assistant', content: '[' }] });
+        return '[' + out;
+      }
+    }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
-        return geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0 } });
+        return geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
       } else {
-        return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }, { type: 'text', text: prompt }] }] });
+        const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }, { type: 'text', text: prompt }] }, { role: 'assistant', content: '[' }] });
+        return '[' + out;
       }
     }
     async function callAIChat(systemPrompt, messages) {
@@ -5989,7 +6001,7 @@ Return ONLY a valid JSON array, no markdown, no explanation:
 [{"food_name":"name","portion":"e.g. 2 roti (~100g)","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]
 
 Food: ${food}`;
-        const text = await callAI('You are a precise nutrition analysis engine. You always use standard reference values and standard serving sizes so the same food always gives the same numbers. Return ONLY valid JSON arrays.', prompt);
+        const text = await callAIJSON('You are a precise nutrition analysis engine. You always use standard reference values and standard serving sizes so the same food always gives the same numbers. Return ONLY valid JSON arrays.', prompt);
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error('Could not parse AI response');
         const items = JSON.parse(jsonMatch[0]);
@@ -7438,7 +7450,7 @@ RULES for consistency:
 Return ONLY a valid JSON array (no markdown): [{"activity_name":"name","duration_min":number,"calories_burned":number}]
 
 Activities: ${text}`;
-      const aiText = await callAI('You are a precise exercise calorie estimator. You always use standard MET values so the same activity always gives the same number. Return ONLY valid JSON arrays.', prompt);
+      const aiText = await callAIJSON('You are a precise exercise calorie estimator. You always use standard MET values so the same activity always gives the same number. Return ONLY valid JSON arrays.', prompt);
       const jsonMatch = aiText.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error('Could not parse AI response');
       const items = JSON.parse(jsonMatch[0]);
