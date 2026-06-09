@@ -5512,7 +5512,7 @@
     async function geminiCall(body, retries = 3) {
       const key = LS.getItem('geminiKey');
       if (!key) throw new Error('Gemini API key not set. Go to Settings to add it.');
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
       for (let i = 0; i <= retries; i++) {
         try {
           // Key sent as a header, not in the URL, so it never leaks into logs/history.
@@ -5595,25 +5595,26 @@
       }
     }
     async function callAI(systemPrompt, userMessage) {
+      // temperature 0 => deterministic: same food typed twice gives the same numbers.
       if (aiProvider === 'gemini') {
-        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024 } });
+        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0 } });
       } else {
-        return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, system: systemPrompt, messages: [{ role: 'user', content: userMessage }] });
+        return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, system: systemPrompt, messages: [{ role: 'user', content: userMessage }] });
       }
     }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
-        return geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024 } });
+        return geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0 } });
       } else {
-        return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }, { type: 'text', text: prompt }] }] });
+        return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }, { type: 'text', text: prompt }] }] });
       }
     }
     async function callAIChat(systemPrompt, messages) {
       if (aiProvider === 'gemini') {
         const contents = messages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] }));
-        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents, generationConfig: { maxOutputTokens: 512 } });
+        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents, generationConfig: { maxOutputTokens: 512, temperature: 0.3 } });
       } else {
-        return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 512, system: systemPrompt, messages });
+        return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 512, temperature: 0.3, system: systemPrompt, messages });
       }
     }
     // Date
@@ -5977,10 +5978,18 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
         showToast('🤖 Analyzing with AI...', 'info');
-        const prompt = `Analyze this food and return ONLY valid JSON (no markdown, no explanation). Be accurate for Indian foods (roti, dal, sabzi, biryani, paneer, chai, paratha, dosa, idli, etc). Return an array of food items:
-[{"food_name":"name","portion":"amount","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]
+        const prompt = `Estimate nutrition for the food(s) below. Use these RULES for consistency:
+1. Use standard reference nutrition values (IFCT / USDA) for common Indian foods (roti, dal, sabzi, biryani, paneer, chai, paratha, dosa, idli, rice, etc).
+2. If the user gives a quantity (e.g. "2 roti", "1 bowl dal", "200g rice"), use it. If NO quantity is given, assume ONE standard home serving and state that portion in grams.
+3. Method: estimate per-100g values for the item, then scale to the portion. Round calories to the nearest 5, macros to 1 decimal.
+4. Calories must roughly equal protein*4 + carbs*4 + fat*9 (within ~10%). Re-check before answering.
+5. Split a multi-item meal into separate entries.
+
+Return ONLY a valid JSON array, no markdown, no explanation:
+[{"food_name":"name","portion":"e.g. 2 roti (~100g)","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]
+
 Food: ${food}`;
-        const text = await callAI('You are a nutrition analysis AI. Return ONLY valid JSON arrays.', prompt);
+        const text = await callAI('You are a precise nutrition analysis engine. You always use standard reference values and standard serving sizes so the same food always gives the same numbers. Return ONLY valid JSON arrays.', prompt);
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error('Could not parse AI response');
         const items = JSON.parse(jsonMatch[0]);
@@ -7008,7 +7017,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
         const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-        const visionPrompt = 'Identify all foods in this image. Return ONLY valid JSON array (no markdown). Be accurate for Indian foods. Format: [{"food_name":"name","portion":"estimated amount","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
+        const visionPrompt = 'Identify every food in this image and estimate nutrition. RULES: use standard IFCT/USDA reference values; estimate the visible portion in grams; method = per-100g value scaled to the portion; calories ~= protein*4 + carbs*4 + fat*9 (within ~10%); round calories to nearest 5, macros to 1 decimal; one entry per distinct item. Return ONLY a valid JSON array (no markdown): [{"food_name":"name","portion":"e.g. 1 bowl (~150g)","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
         const text = await callAIVision(base64, 'image/jpeg', visionPrompt);
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error('Could not parse AI response');
@@ -7029,7 +7038,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
         const base64 = await resizeAndEncode(file, 800);
-        const visionPrompt = 'Identify all foods in this image. Return ONLY valid JSON array (no markdown). Be accurate for Indian foods. Format: [{"food_name":"name","portion":"estimated amount","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
+        const visionPrompt = 'Identify every food in this image and estimate nutrition. RULES: use standard IFCT/USDA reference values; estimate the visible portion in grams; method = per-100g value scaled to the portion; calories ~= protein*4 + carbs*4 + fat*9 (within ~10%); round calories to nearest 5, macros to 1 decimal; one entry per distinct item. Return ONLY a valid JSON array (no markdown): [{"food_name":"name","portion":"e.g. 1 bowl (~150g)","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
         const text = await callAIVision(base64, 'image/jpeg', visionPrompt);
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error('Could not parse AI response');
@@ -7420,12 +7429,16 @@ IMPORTANT RULES:
     // AI estimates calories burned every time — no stored MET formula.
     // Shared by the quick-add presets and the free-text describe box.
     async function aiEstimateBurn(text) {
-      const prompt = `Estimate calories burned for these activities. User weighs ${bodyStats.weight}kg, is ${bodyStats.age} years old, ${bodyStats.height}cm tall, ${bodyStats.gender}.
+      const prompt = `Estimate calories burned. User: ${bodyStats.weight}kg, ${bodyStats.age}y, ${bodyStats.height}cm, ${bodyStats.gender}.
+RULES for consistency:
+1. Use standard MET values: calories = MET * weight(kg) * hours. Walking ~3.5, brisk walk ~4.3, running ~9, cycling ~7, gym/weights ~5, yoga ~3, swimming ~7, HIIT ~9, dancing ~5, stairs ~8, housework ~3.3, stretching ~2.5.
+2. If duration is missing, assume 30 min.
+3. Round calories to the nearest 5.
 
-Return ONLY valid JSON array (no markdown): [{"activity_name":"name","duration_min":number,"calories_burned":number}]
+Return ONLY a valid JSON array (no markdown): [{"activity_name":"name","duration_min":number,"calories_burned":number}]
 
 Activities: ${text}`;
-      const aiText = await callAI('You are a fitness and exercise calorie estimation expert. Return ONLY valid JSON arrays.', prompt);
+      const aiText = await callAI('You are a precise exercise calorie estimator. You always use standard MET values so the same activity always gives the same number. Return ONLY valid JSON arrays.', prompt);
       const jsonMatch = aiText.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error('Could not parse AI response');
       const items = JSON.parse(jsonMatch[0]);
