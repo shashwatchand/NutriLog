@@ -3792,6 +3792,80 @@
       margin-top: 12px
     }
 
+    /* Premium weight chart wrapper */
+    .wc-chart-wrap {
+      position: relative;
+      margin-top: 8px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: linear-gradient(180deg, #FAFBFC 0%, #F3F4F6 100%);
+      border: 1px solid rgba(0,0,0,0.06);
+      cursor: crosshair;
+    }
+    .wc-chart-wrap .chart-canvas {
+      border: none;
+      margin-top: 0;
+      background: transparent;
+      height: 220px;
+      border-radius: 0;
+    }
+    .wc-crosshair {
+      position: absolute;
+      top: 0;
+      bottom: 30px;
+      width: 1px;
+      background: rgba(15,118,110,0.25);
+      pointer-events: none;
+      display: none;
+      z-index: 3;
+    }
+    .wc-crosshair::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -6px;
+      width: 13px;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(15,118,110,0.04), transparent);
+    }
+    .wc-tooltip {
+      position: absolute;
+      display: none;
+      pointer-events: none;
+      z-index: 10;
+      background: white;
+      border: 1px solid rgba(15,118,110,0.15);
+      border-radius: 10px;
+      padding: 8px 14px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+      white-space: nowrap;
+      transition: transform 0.1s ease, opacity 0.15s ease;
+    }
+    .wc-tt-weight {
+      font-weight: 700;
+      font-size: 15px;
+      color: #0F766E;
+      letter-spacing: -0.02em;
+    }
+    .wc-tt-date {
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 1px;
+    }
+    .wc-hover-dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #0F766E;
+      border: 2.5px solid white;
+      box-shadow: 0 2px 8px rgba(15,118,110,0.35);
+      pointer-events: none;
+      display: none;
+      z-index: 5;
+      transform: translate(-50%, -50%);
+    }
+
     .trend-legend {
       display: flex;
       gap: 12px;
@@ -5235,13 +5309,17 @@
           <input class="input" id="weightDate" type="date" style="flex:1">
           <button class="btn btn-primary btn-sm" onclick="logWeight()">Log</button>
         </div>
-        <div style="position:relative">
+        <div class="wc-chart-wrap" id="weightChartWrap">
           <canvas class="chart-canvas" id="weightCanvas"></canvas>
-          <div id="weightTooltip"
-            style="display:none;position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--accent);border-radius:10px;padding:8px 14px;font-size:12px;z-index:10;box-shadow:0 4px 20px rgba(0,0,0,0.4);white-space:nowrap;transition:opacity 0.15s">
-            <div style="font-weight:600;color:var(--text)" id="ttWeight"></div>
-            <div style="color:var(--text2);font-size:11px;margin-top:2px" id="ttDate"></div>
+          <!-- Crosshair line -->
+          <div class="wc-crosshair" id="wcCrosshair"></div>
+          <!-- Floating tooltip -->
+          <div class="wc-tooltip" id="weightTooltip">
+            <div class="wc-tt-weight" id="ttWeight">85.5 kg</div>
+            <div class="wc-tt-date" id="ttDate">Jun 8, 2026</div>
           </div>
+          <!-- Hover dot -->
+          <div class="wc-hover-dot" id="wcHoverDot"></div>
         </div>
         <div id="weightLog" class="weight-log"></div>
       </div>
@@ -6786,6 +6864,95 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       drawWeightChart(weights);
     }
     let weightChartPoints = [];
+    // Bezier helper: compute smooth cubic bezier control points
+    function _wcBezierPts(pts) {
+      const cp = [];
+      for (let i = 0; i < pts.length; i++) {
+        const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2];
+        if (!p2) break;
+        const t = 0.35;
+        const cp1x = p1.x + (p2.x - (p0 ? p0.x : p1.x)) * t;
+        const cp1y = p1.y + (p2.y - (p0 ? p0.y : p1.y)) * t;
+        const cp2x = p2.x - ((p3 ? p3.x : p2.x) - p1.x) * t;
+        const cp2y = p2.y - ((p3 ? p3.y : p2.y) - p1.y) * t;
+        cp.push({ cp1x, cp1y, cp2x, cp2y, x: p2.x, y: p2.y });
+      }
+      return cp;
+    }
+    function _wcDrawChart(ctx, W, H, weights, pad, maxV, minV, xStep, yScale, highlightIdx) {
+      // Build point array
+      const pts = weights.map((w, i) => ({
+        x: pad.l + i * xStep,
+        y: pad.t + (maxV - w.weight) * yScale
+      }));
+      // Subtle horizontal grid lines
+      ctx.setLineDash([4, 4]);
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.t + i * (H - pad.t - pad.b) / 4;
+        ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+        ctx.fillStyle = '#A1A1AA'; ctx.font = '500 10px Inter'; ctx.textAlign = 'right';
+        ctx.fillText((maxV - (maxV - minV) * i / 4).toFixed(1), pad.l - 8, y + 4);
+      }
+      ctx.setLineDash([]);
+      // Gradient fill under curve
+      const fillGrad = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
+      const isDown = weights[weights.length - 1].weight <= weights[0].weight;
+      if (isDown) {
+        fillGrad.addColorStop(0, 'rgba(15,118,110,0.18)');
+        fillGrad.addColorStop(0.6, 'rgba(15,118,110,0.05)');
+        fillGrad.addColorStop(1, 'rgba(15,118,110,0.0)');
+      } else {
+        fillGrad.addColorStop(0, 'rgba(239,68,68,0.14)');
+        fillGrad.addColorStop(0.6, 'rgba(239,68,68,0.04)');
+        fillGrad.addColorStop(1, 'rgba(239,68,68,0.0)');
+      }
+      // Draw smooth bezier path
+      const cp = _wcBezierPts(pts);
+      // Line + fill path
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      cp.forEach(c => ctx.bezierCurveTo(c.cp1x, c.cp1y, c.cp2x, c.cp2y, c.x, c.y));
+      // Fill area
+      ctx.lineTo(pts[pts.length - 1].x, H - pad.b);
+      ctx.lineTo(pts[0].x, H - pad.b);
+      ctx.closePath();
+      ctx.fillStyle = fillGrad;
+      ctx.fill();
+      // Stroke the line
+      const lineColor = isDown ? '#0F766E' : '#EF4444';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      cp.forEach(c => ctx.bezierCurveTo(c.cp1x, c.cp1y, c.cp2x, c.cp2y, c.x, c.y));
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.stroke();
+      // Small dots on each data point (subtle)
+      pts.forEach((p, i) => {
+        if (i === highlightIdx) return; // skip highlighted, drawn by DOM
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = lineColor;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+      });
+      // Date labels along bottom
+      const step = Math.max(1, Math.floor(weights.length / 6));
+      weights.forEach((w, i) => {
+        if (i % step === 0 || i === weights.length - 1) {
+          const x = pad.l + i * xStep;
+          ctx.fillStyle = '#A1A1AA'; ctx.font = '500 9px Inter'; ctx.textAlign = 'center';
+          const d = new Date(w.date + 'T12:00:00');
+          ctx.fillText(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), x, H - 6);
+        }
+      });
+      return pts;
+    }
     function drawWeightChart(weights) {
       const canvas = document.getElementById('weightCanvas');
       const ctx = canvas.getContext('2d');
@@ -6795,126 +6962,85 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       const W = canvas.offsetWidth, H = canvas.offsetHeight;
       ctx.clearRect(0, 0, W, H);
       weightChartPoints = [];
-      if (weights.length < 2) { ctx.fillStyle = '#9CA3AF'; ctx.font = '13px Inter'; ctx.textAlign = 'center'; ctx.fillText('Need 2+ entries for chart', W / 2, H / 2); return }
-      const pad = { t: 20, r: 15, b: 30, l: 45 };
+      // Hide interactive elements
+      const crosshair = document.getElementById('wcCrosshair');
+      const tooltip = document.getElementById('weightTooltip');
+      const hoverDot = document.getElementById('wcHoverDot');
+      if (crosshair) crosshair.style.display = 'none';
+      if (tooltip) tooltip.style.display = 'none';
+      if (hoverDot) hoverDot.style.display = 'none';
+      if (weights.length < 2) {
+        ctx.fillStyle = '#9CA3AF'; ctx.font = '13px Inter'; ctx.textAlign = 'center';
+        ctx.fillText('Need 2+ entries for chart', W / 2, H / 2);
+        return;
+      }
+      const pad = { t: 24, r: 16, b: 32, l: 44 };
       const vals = weights.map(w => w.weight);
-      const minV = Math.min(...vals) - 1, maxV = Math.max(...vals) + 1;
+      const minV = Math.min(...vals) - 0.5, maxV = Math.max(...vals) + 0.5;
       const xStep = (W - pad.l - pad.r) / (weights.length - 1);
       const yScale = (H - pad.t - pad.b) / (maxV - minV);
-      ctx.strokeStyle = '#E0E0DB'; ctx.lineWidth = 1;
-      for (let i = 0; i <= 4; i++) {
-        const y = pad.t + i * (H - pad.t - pad.b) / 4;
-        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
-        ctx.fillStyle = '#9CA3AF'; ctx.font = '10px Inter'; ctx.textAlign = 'right';
-        ctx.fillText((maxV - (maxV - minV) * i / 4).toFixed(1), pad.l - 5, y + 4);
-      }
-      ctx.beginPath(); ctx.strokeStyle = '#0F766E'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
-      weights.forEach((w, i) => {
-        const x = pad.l + i * xStep, y = pad.t + (maxV - w.weight) * yScale;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }); ctx.stroke();
-      weights.forEach((w, i) => {
-        const x = pad.l + i * xStep, y = pad.t + (maxV - w.weight) * yScale;
-        ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fillStyle = '#0F766E'; ctx.fill();
-        ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
-        weightChartPoints.push({ x, y, weight: w.weight, date: w.date });
-      });
-      const step = Math.max(1, Math.floor(weights.length / 5));
-      weights.forEach((w, i) => {
-        if (i % step === 0 || i === weights.length - 1) {
-          const x = pad.l + i * xStep;
-          ctx.fillStyle = '#9CA3AF'; ctx.font = '9px Inter'; ctx.textAlign = 'center';
-          const d = new Date(w.date + 'T12:00:00');
-          ctx.fillText(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), x, H - 8);
-        }
-      });
-      // Attach tooltip listeners
-      canvas.onmousemove = canvas.ontouchmove = function (e) {
-        if (e.type === 'mousemove') e.preventDefault(); // Don't block touch scrolling
+      const pts = _wcDrawChart(ctx, W, H, weights, pad, maxV, minV, xStep, yScale, -1);
+      // Store points for interactivity
+      weightChartPoints = weights.map((w, i) => ({ x: pts[i].x, y: pts[i].y, weight: w.weight, date: w.date }));
+      // Attach interactive listeners (crosshair-style like Google Finance)
+      const wrap = document.getElementById('weightChartWrap');
+      const onMove = function (e) {
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const mx = clientX - rect.left;
-        const my = clientY - rect.top;
-        const tooltip = document.getElementById('weightTooltip');
-        let found = false;
+        // Find closest point by X distance
+        let closest = null, closestDist = Infinity;
         for (const pt of weightChartPoints) {
-          const dist = Math.sqrt((mx - pt.x) ** 2 + (my - pt.y) ** 2);
-          if (dist < 18) {
-            const d = new Date(pt.date + 'T12:00:00');
-            const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-            document.getElementById('ttWeight').textContent = pt.weight + ' kg';
-            document.getElementById('ttDate').textContent = dateStr;
-            let tx = pt.x - 50;
-            let ty = pt.y - 58;
-            if (tx < 5) tx = 5;
-            if (tx + 120 > rect.width) tx = rect.width - 125;
-            if (ty < 5) ty = pt.y + 15;
-            tooltip.style.left = tx + 'px';
-            tooltip.style.top = ty + 'px';
-            tooltip.style.display = 'block';
-            found = true;
-            // Redraw highlighted dot
-            ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
-            drawWeightChartStatic(weights, pt);
-            break;
-          }
+          const dist = Math.abs(mx - pt.x);
+          if (dist < closestDist) { closestDist = dist; closest = pt; }
         }
-        if (!found) {
+        if (closest && closestDist < 50) {
+          // Show crosshair
+          crosshair.style.display = 'block';
+          crosshair.style.left = closest.x + 'px';
+          // Show hover dot
+          hoverDot.style.display = 'block';
+          hoverDot.style.left = closest.x + 'px';
+          hoverDot.style.top = closest.y + 'px';
+          // Show tooltip
+          const d = new Date(closest.date + 'T12:00:00');
+          const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          document.getElementById('ttWeight').textContent = closest.weight + ' kg';
+          document.getElementById('ttDate').textContent = dateStr;
+          let tx = closest.x + 16;
+          let ty = closest.y - 24;
+          if (tx + 110 > rect.width) tx = closest.x - 126;
+          if (ty < 8) ty = 8;
+          tooltip.style.left = tx + 'px';
+          tooltip.style.top = ty + 'px';
+          tooltip.style.display = 'block';
+          // Redraw chart with highlight
+          const idx = weightChartPoints.indexOf(closest);
+          ctx.clearRect(0, 0, W, H);
+          _wcDrawChart(ctx, W, H, weights, pad, maxV, minV, xStep, yScale, idx);
+        } else {
+          crosshair.style.display = 'none';
           tooltip.style.display = 'none';
-          ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
-          drawWeightChartStatic(weights, null);
+          hoverDot.style.display = 'none';
+          ctx.clearRect(0, 0, W, H);
+          _wcDrawChart(ctx, W, H, weights, pad, maxV, minV, xStep, yScale, -1);
         }
       };
-      canvas.onmouseleave = function () {
-        document.getElementById('weightTooltip').style.display = 'none';
-        ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
-        drawWeightChartStatic(weights, null);
+      const onLeave = function () {
+        crosshair.style.display = 'none';
+        tooltip.style.display = 'none';
+        hoverDot.style.display = 'none';
+        ctx.clearRect(0, 0, W, H);
+        _wcDrawChart(ctx, W, H, weights, pad, maxV, minV, xStep, yScale, -1);
       };
+      wrap.onmousemove = onMove;
+      wrap.ontouchmove = function(e) { onMove(e); };
+      wrap.onmouseleave = onLeave;
+      wrap.ontouchend = onLeave;
     }
+    // Legacy alias
     function drawWeightChartStatic(weights, highlightPt) {
-      const canvas = document.getElementById('weightCanvas');
-      const ctx = canvas.getContext('2d');
-      const W = canvas.offsetWidth, H = canvas.offsetHeight;
-      if (weights.length < 2) return;
-      const pad = { t: 20, r: 15, b: 30, l: 45 };
-      const vals = weights.map(w => w.weight);
-      const minV = Math.min(...vals) - 1, maxV = Math.max(...vals) + 1;
-      const xStep = (W - pad.l - pad.r) / (weights.length - 1);
-      const yScale = (H - pad.t - pad.b) / (maxV - minV);
-      ctx.strokeStyle = '#E0E0DB'; ctx.lineWidth = 1;
-      for (let i = 0; i <= 4; i++) {
-        const y = pad.t + i * (H - pad.t - pad.b) / 4;
-        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
-        ctx.fillStyle = '#9CA3AF'; ctx.font = '10px Inter'; ctx.textAlign = 'right';
-        ctx.fillText((maxV - (maxV - minV) * i / 4).toFixed(1), pad.l - 5, y + 4);
-      }
-      ctx.beginPath(); ctx.strokeStyle = '#0F766E'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
-      weights.forEach((w, i) => {
-        const x = pad.l + i * xStep, y = pad.t + (maxV - w.weight) * yScale;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }); ctx.stroke();
-      weights.forEach((w, i) => {
-        const x = pad.l + i * xStep, y = pad.t + (maxV - w.weight) * yScale;
-        const isHighlighted = highlightPt && highlightPt.date === w.date;
-        const radius = isHighlighted ? 7 : 5;
-        if (isHighlighted) {
-          ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(15, 118, 110, 0.12)'; ctx.fill();
-        }
-        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = isHighlighted ? '#14B8A6' : '#0F766E'; ctx.fill();
-        ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
-      });
-      const step = Math.max(1, Math.floor(weights.length / 5));
-      weights.forEach((w, i) => {
-        if (i % step === 0 || i === weights.length - 1) {
-          const x = pad.l + i * xStep;
-          ctx.fillStyle = '#9CA3AF'; ctx.font = '9px Inter'; ctx.textAlign = 'center';
-          const d = new Date(w.date + 'T12:00:00');
-          ctx.fillText(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), x, H - 8);
-        }
-      });
+      drawWeightChart(weights);
     }
     // Nutrient Trends
     async function loadTrends() {
