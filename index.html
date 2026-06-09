@@ -5687,16 +5687,21 @@
       if (aiProvider === 'gemini') {
         return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
       } else {
-        const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, system: systemPrompt, messages: [{ role: 'user', content: userMessage }, { role: 'assistant', content: '[' }] });
-        return '[' + out;
+        const jsonSystem = systemPrompt + '\n\nCRITICAL: Return ONLY a valid JSON array. No markdown, no code fences, no explanation. Start your response with [ and end with ].';
+        const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, system: jsonSystem, messages: [{ role: 'user', content: userMessage }] });
+        // Extract JSON array from response (handles any stray text)
+        const match = out.match(/\[[\s\S]*\]/);
+        return match ? match[0] : out;
       }
     }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
         return geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
       } else {
-        const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }, { type: 'text', text: prompt }] }, { role: 'assistant', content: '[' }] });
-        return '[' + out;
+        const jsonPrompt = prompt + '\n\nCRITICAL: Return ONLY a valid JSON array. No markdown, no code fences, no explanation. Start your response with [ and end with ].';
+        const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }, { type: 'text', text: jsonPrompt }] }] });
+        const match = out.match(/\[[\s\S]*\]/);
+        return match ? match[0] : out;
       }
     }
     async function callAIChat(systemPrompt, messages) {
