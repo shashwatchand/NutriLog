@@ -18,7 +18,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Sora:wght@400;500;600;700&family=Manrope:wght@400;500&display=swap"
     rel="stylesheet">
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -77,6 +77,17 @@
       cursor: pointer;
       border: none;
       outline: none
+    }
+
+    /* Visible focus ring for keyboard users (mouse clicks stay clean) */
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 6px
     }
 
     input,
@@ -4511,7 +4522,7 @@
 </head>
 
 <body>
-  <div class="toast-container" id="toasts"></div>
+  <div class="toast-container" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
   <!-- SIDEBAR NAVIGATION -->
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -4663,9 +4674,11 @@
             <li>Click "New Project", pick a name and password</li>
             <li>Once created, go to Settings → API</li>
             <li>Copy your <strong>Project URL</strong> and <strong>anon public</strong> key</li>
+            <li>Go to <strong>Authentication → Providers → Anonymous</strong> and turn it <strong>ON</strong> (this keeps your data private)</li>
             <li>Go to SQL Editor and run this SQL:</li>
           </ol>
-          <div class="sql-block" id="sqlBlock">create table meals (
+          <div class="sql-block" id="sqlBlock">-- 1) TABLES
+            create table if not exists meals (
             id uuid default gen_random_uuid() primary key,
             user_id text not null,
             date date not null,
@@ -4679,14 +4692,15 @@
             created_at timestamp default now()
             );
 
-            create table user_settings (
+            create table if not exists user_settings (
             user_id text primary key,
             goals text,
             diet_mode text default 'balanced',
+            body_stats text,
             updated_at timestamp default now()
             );
 
-            create table activities (
+            create table if not exists activities (
             id uuid default gen_random_uuid() primary key,
             user_id text not null,
             date date not null,
@@ -4696,17 +4710,34 @@
             created_at timestamp default now()
             );
 
-            -- Run this if you already have the tables above:
-            alter table user_settings add column if not exists body_stats text;
-
-            create table weight_logs (
+            create table if not exists weight_logs (
             id uuid default gen_random_uuid() primary key,
             user_id text not null,
             date date not null,
             weight numeric not null,
             created_at timestamp default now(),
             unique(user_id, date)
-            );<button class="copy-btn"
+            );
+
+            -- Run this if you created user_settings before this version:
+            alter table user_settings add column if not exists body_stats text;
+
+            -- 2) ROW LEVEL SECURITY (IMPORTANT — keeps each user's data private)
+            -- Also enable Anonymous Sign-ins: Supabase Dashboard > Authentication > Providers > Anonymous.
+            alter table meals enable row level security;
+            alter table user_settings enable row level security;
+            alter table activities enable row level security;
+            alter table weight_logs enable row level security;
+
+            -- Each row is readable/writable only by the auth user who owns it.
+            create policy "own_meals" on meals for all to authenticated
+            using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+            create policy "own_settings" on user_settings for all to authenticated
+            using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+            create policy "own_activities" on activities for all to authenticated
+            using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+            create policy "own_weights" on weight_logs for all to authenticated
+            using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);<button class="copy-btn"
               onclick="navigator.clipboard.writeText(document.getElementById('sqlBlock').innerText.replace('Copy','').trim());showToast('SQL copied!','success')">Copy</button>
           </div>
         </details>
@@ -4727,7 +4758,7 @@
       <div class="top-bar">
         <!-- Left: hamburger + wordmark -->
         <div class="navbar-brand">
-          <button class="hamburger-btn" onclick="openSidebar()" title="Menu">
+          <button class="hamburger-btn" onclick="openSidebar()" title="Menu" aria-label="Open menu">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
@@ -4817,9 +4848,9 @@
         </div>
       </div>
       <div class="date-nav">
-        <button onclick="changeDate(-1)">◀</button>
+        <button onclick="changeDate(-1)" aria-label="Previous day">◀</button>
         <span id="dateLabel"></span>
-        <button onclick="changeDate(1)">▶</button>
+        <button onclick="changeDate(1)" aria-label="Next day">▶</button>
       </div>
       <!-- Net Calories Summary -->
       <div class="net-cal-bar">
@@ -4873,6 +4904,31 @@
             max="300">
           <button class="btn btn-primary btn-sm" onclick="quickLogWeight()">Save</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleWeightInput()">Cancel</button>
+        </div>
+      </div>
+      <!-- Water Tracking Card -->
+      <style>
+        .water-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+        .water-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+        .water-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--label); }
+        .water-count { font-size: 14px; font-weight: 700; color: var(--text); }
+        .water-count span { color: var(--text2); font-weight: 500; }
+        .water-row { display: flex; align-items: center; gap: 12px; }
+        .water-bar { flex: 1; height: 12px; border-radius: 8px; background: var(--card2); overflow: hidden; border: 1px solid var(--border); }
+        .water-fill { height: 100%; width: 0; border-radius: 8px; background: linear-gradient(90deg, #38bdf8, #0369A1); transition: width .35s cubic-bezier(.22,1,.36,1); }
+        .water-btn { width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font-size: 18px; font-weight: 700; color: var(--accent); display: inline-flex; align-items: center; justify-content: center; transition: all .2s; }
+        .water-btn:hover { border-color: var(--accent); background: var(--card2); }
+        .water-btn:active { transform: scale(.92); }
+      </style>
+      <div class="water-card" id="waterCard">
+        <div class="water-top">
+          <span class="water-eyebrow">💧 Water</span>
+          <span class="water-count" id="waterCount">0 <span>/ 8 glasses</span></span>
+        </div>
+        <div class="water-row">
+          <button class="water-btn" onclick="addWater(-1)" aria-label="Remove a glass of water">−</button>
+          <div class="water-bar"><div class="water-fill" id="waterFill"></div></div>
+          <button class="water-btn" onclick="addWater(1)" aria-label="Add a glass of water">+</button>
         </div>
       </div>
       <!-- View Tabs -->
@@ -5268,6 +5324,14 @@
       <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveSettings()">Save
         Settings</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0">
+      <h3 style="font-size:15px;margin-bottom:4px">🔒 Privacy & Security</h3>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">Secure mode signs you in
+        anonymously and uses Row Level Security so only you can read your data.</p>
+      <div id="securityStatus"
+        style="background:var(--surface);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);font-size:12px"></div>
+      <button id="upgradeSecureBtn" class="btn btn-primary btn-sm" style="width:100%;justify-content:center;display:none"
+        onclick="upgradeSecureMode()">🔒 Upgrade to Secure Mode</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0">
       <h3 style="font-size:15px;margin-bottom:4px">🔄 Cross-Device Sync</h3>
       <p style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">Share your User ID with another
         device or person to sync meal data. Both devices must use the same Supabase project.</p>
@@ -5300,7 +5364,7 @@
     </div>
   </div>
   <!-- AI CHAT -->
-  <button class="chat-fab" id="chatFab" onclick="toggleChat()">💬</button>
+  <button class="chat-fab" id="chatFab" onclick="toggleChat()" aria-label="Open AI coach chat">💬</button>
   <div class="chat-panel" id="chatPanel">
     <div class="chat-header">
       <h4>🧠 Nutri AI <span class="chat-day" id="chatDay"></span></h4>
@@ -5320,6 +5384,7 @@
     let bodyStats = { weight: 70, height: 170, age: 25, gender: 'male', activityLevel: 1.2 };
     let todayEaten = 0, todayBurned = 0;
     let selectedPreset = null;
+    let secureMode = false; // true = anonymous-auth + RLS (per-user private). Set in init().
     const LS = localStorage;
     function fmt(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0'); return y + '-' + m + '-' + dd; }
     function showToast(msg, type = 'info') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.getElementById('toasts').appendChild(t); setTimeout(() => t.remove(), 3500) }
@@ -5346,6 +5411,11 @@
       const su = LS.getItem('supaUrl'), sk = LS.getItem('supaKey');
       userId = LS.getItem('userId');
       if (!userId) { userId = crypto.randomUUID(); LS.setItem('userId', userId) }
+      // Secure mode = anonymous auth + RLS. Default ON for fresh installs; OFF for existing
+      // setups so their data keeps loading. Existing users can upgrade in Settings.
+      let sm = LS.getItem('secureMode');
+      if (sm === null) { sm = su ? 'false' : 'true'; LS.setItem('secureMode', sm); }
+      secureMode = sm === 'true';
       const sg = LS.getItem('goals');
       if (sg) goals = JSON.parse(sg);
       dietMode = LS.getItem('dietMode') || 'balanced';
@@ -5353,7 +5423,7 @@
       if (bs) bodyStats = JSON.parse(bs);
       bodyStats.activityLevel = 1.2; // Always sedentary baseline
       if (aiKey && su && sk) {
-        initSupabase(su, sk);
+        await initSupabase(su, sk);
         showScreen('mainScreen');
         renderPresetGrid();
         updateQuickWeight();
@@ -5381,7 +5451,27 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
 
     function showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active') }
-    function initSupabase(url, key) { sb = window.supabase.createClient(url, key) }
+    async function initSupabase(url, key) {
+      sb = window.supabase.createClient(url, key);
+      if (!secureMode) return; // legacy mode: data keyed by stored UUID (no auth)
+      try {
+        let { data: { session } } = await sb.auth.getSession();
+        if (!session) {
+          const { data, error } = await sb.auth.signInAnonymously();
+          if (error) throw error;
+          session = data.session;
+        }
+        if (session?.user?.id) {
+          userId = session.user.id;          // RLS keys data to the auth user id
+          LS.setItem('userId', userId);
+        }
+      } catch (e) {
+        console.warn('Anonymous auth unavailable — using legacy mode:', e.message);
+        showToast('⚠️ Secure mode needs Anonymous sign-ins enabled in Supabase. Using legacy mode for now.', 'info');
+        secureMode = false;
+        LS.setItem('secureMode', 'false');
+      }
+    }
     // Setup provider toggle
     function switchSetupProvider(p) {
       document.getElementById('setupGeminiBtn').classList.toggle('active', p === 'gemini');
@@ -5395,7 +5485,7 @@
       document.getElementById('setGeminiSection').classList.toggle('active', p === 'gemini');
       document.getElementById('setClaudeSection').classList.toggle('active', p === 'claude');
     }
-    function saveSetup() {
+    async function saveSetup() {
       const gk = document.getElementById('geminiKey').value.trim();
       const ck = document.getElementById('claudeKey').value.trim();
       const su = document.getElementById('supaUrl').value.trim();
@@ -5410,18 +5500,22 @@
       if (gk) LS.setItem('geminiKey', gk);
       if (ck) LS.setItem('claudeKey', ck);
       LS.setItem('supaUrl', su); LS.setItem('supaKey', sk);
-      initSupabase(su, sk); showScreen('mainScreen');
+      // Fresh setups default to secure mode (anon auth + RLS).
+      secureMode = true; LS.setItem('secureMode', 'true');
+      await initSupabase(su, sk); showScreen('mainScreen');
       loadDay(); loadWeekChart(); renderPresetGrid(); updateQuickWeight();
+      loadGoalsFromCloud(); loadWeightsFromCloud(); loadStreaks();
       showToast('Setup complete! Using ' + (provider === 'gemini' ? 'Google Gemini 🆓' : 'Claude 🔑'), 'success');
     }
     // Unified AI Functions
     async function geminiCall(body, retries = 3) {
       const key = LS.getItem('geminiKey');
       if (!key) throw new Error('Gemini API key not set. Go to Settings to add it.');
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=' + key;
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
       for (let i = 0; i <= retries; i++) {
         try {
-          const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          // Key sent as a header, not in the URL, so it never leaks into logs/history.
+          const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body) });
           if (res.ok) {
             const data = await res.json();
             if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
@@ -5532,8 +5626,26 @@
       document.getElementById('dateLabel').textContent = label;
       const navDate = document.getElementById('navbarDate');
       if (navDate) navDate.textContent = ds === today ? 'Today' : label;
+      renderWater();
       // Run meals + activities in parallel for faster loading
       await Promise.all([fetchMeals(ds), loadActivities()]);
+    }
+    // --- Water tracking (stored locally, per day) ---
+    const WATER_GOAL = 8; // glasses (~250ml each ≈ 2L)
+    function waterKey() { return 'water_' + fmt(currentDate); }
+    function getWater() { return Math.max(0, parseInt(LS.getItem(waterKey()) || '0', 10) || 0); }
+    function addWater(n) {
+      const next = Math.min(20, Math.max(0, getWater() + n));
+      LS.setItem(waterKey(), String(next));
+      renderWater();
+      if (n > 0 && next === WATER_GOAL) showToast('💧 Hydration goal reached! Nice.', 'success');
+    }
+    function renderWater() {
+      const count = getWater();
+      const countEl = document.getElementById('waterCount');
+      const fillEl = document.getElementById('waterFill');
+      if (countEl) countEl.innerHTML = count + ' <span>/ ' + WATER_GOAL + ' glasses</span>';
+      if (fillEl) fillEl.style.width = Math.min(100, (count / WATER_GOAL) * 100) + '%';
     }
     async function fetchMeals(date) {
       try {
@@ -6971,7 +7083,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
     }
     async function onBarcodeScanned(code) {
       if (barcodeScanner) { try { barcodeScanner.stop().catch(() => { }) } catch (e) { } }
-      document.getElementById('barcodeResult').innerHTML = '<div style="text-align:center;padding:16px"><div class="spinner"></div><p style="margin-top:8px;color:var(--text2);font-size:12px">Looking up ' + code + '...</p></div>';
+      document.getElementById('barcodeResult').innerHTML = '<div style="text-align:center;padding:16px"><div class="spinner"></div><p style="margin-top:8px;color:var(--text2);font-size:12px">Looking up ' + esc(code) + '...</p></div>';
       try {
         const res = await fetch('https://world.openfoodfacts.org/api/v0/product/' + code + '.json');
         const data = await res.json();
@@ -6995,12 +7107,18 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
         html += '<span class="chip fat-chip">' + fat + 'g F</span>';
         html += '<span class="chip fib-chip">' + fiber + 'g Fib</span>';
         html += '</div><p style="font-size:11px;color:var(--text2);margin:8px 0">Per 100g serving</p>';
-        html += '<button class="btn btn-primary btn-sm" style="width:100%;justify-content:center" onclick="logBarcodeFood(\'' + esc(name).replace(/'/g, "\\'") + '\',' + cal + ',' + prot + ',' + carb + ',' + fat + ',' + fiber + ')">Log this food</button>';
+        // Stash the product object instead of inlining it into the onclick (avoids HTML-attribute injection from untrusted product names).
+        lastBarcodeProduct = { name, cal, prot, carb, fat, fiber };
+        html += '<button class="btn btn-primary btn-sm" style="width:100%;justify-content:center" onclick="logBarcodeFood()">Log this food</button>';
         html += '</div>';
         document.getElementById('barcodeResult').innerHTML = html;
       } catch (err) { document.getElementById('barcodeResult').innerHTML = '<div style="padding:16px;text-align:center"><p style="color:var(--red);margin-bottom:12px">' + esc(err.message) + '</p><button class="btn btn-secondary btn-sm" onclick="openBarcodeScanner()">Try Again</button></div>' }
     }
-    async function logBarcodeFood(name, cal, prot, carb, fat, fiber) {
+    let lastBarcodeProduct = null;
+    async function logBarcodeFood() {
+      const p = lastBarcodeProduct;
+      if (!p) { showToast('Scan a product first', 'error'); return; }
+      const { name, cal, prot, carb, fat, fiber } = p;
       try {
         const { error } = await sb.from('meals').insert({ user_id: userId, date: fmt(currentDate), food_name: name, portion: '100g', calories: cal, protein: prot, carbs: carb, fat: fat, fiber: fiber });
         if (error) throw error;
@@ -7053,9 +7171,40 @@ Suggest practical Indian meals that fit the remaining macros and diet mode. For 
       document.getElementById('sGender').value = bodyStats.gender || 'male';
       updateTdeeDisplay();
       switchSettingsProvider(aiProvider);
+      renderSecurityStatus();
       document.getElementById('settingsModal').classList.add('active');
     }
-    function saveSettings() {
+    function renderSecurityStatus() {
+      const el = document.getElementById('securityStatus');
+      const btn = document.getElementById('upgradeSecureBtn');
+      if (!el) return;
+      if (secureMode) {
+        el.innerHTML = '<span style="color:var(--green);font-weight:700">✅ Secure mode is ON</span><br><span style="color:var(--text2)">Anonymous auth + Row Level Security active. Your data is private to this account.</span>';
+        if (btn) btn.style.display = 'none';
+      } else {
+        el.innerHTML = '<span style="color:var(--orange);font-weight:700">⚠️ Legacy mode</span><br><span style="color:var(--text2)">Data is keyed by a shared ID without Row Level Security. Run the latest setup SQL, enable Anonymous sign-ins in Supabase, then upgrade below.</span>';
+        if (btn) btn.style.display = '';
+      }
+    }
+    async function upgradeSecureMode() {
+      if (!sb) { showToast('Add your Supabase details first', 'error'); return; }
+      if (!confirm('Upgrade to Secure Mode?\n\nMake sure you have:\n1. Run the latest setup SQL (enables Row Level Security)\n2. Turned ON Anonymous sign-ins in Supabase\n\nYour existing data stays in the database — you\'ll get a one-line SQL to move it to your secure account.')) return;
+      const oldId = userId;
+      secureMode = true; LS.setItem('secureMode', 'true');
+      await initSupabase(LS.getItem('supaUrl'), LS.getItem('supaKey'));
+      if (!secureMode) { renderSecurityStatus(); return; } // fallback already messaged
+      const newId = userId;
+      if (oldId && newId && oldId !== newId) {
+        const sql = `-- Run in Supabase SQL Editor to move your existing data to your secure account:\nupdate meals set user_id='${newId}' where user_id='${oldId}';\nupdate user_settings set user_id='${newId}' where user_id='${oldId}';\nupdate activities set user_id='${newId}' where user_id='${oldId}';\nupdate weight_logs set user_id='${newId}' where user_id='${oldId}';`;
+        try { await navigator.clipboard.writeText(sql); } catch (e) {}
+        alert('✅ Secure mode is ON.\n\nA migration SQL was copied to your clipboard. Paste & run it in the Supabase SQL Editor to bring your old meals/weights into your secure account.\n\n' + sql);
+      } else {
+        showToast('✅ Secure mode enabled', 'success');
+      }
+      renderSecurityStatus();
+      loadGoalsFromCloud(); loadWeightsFromCloud(); loadDay(); loadWeekChart(); loadStreaks();
+    }
+    async function saveSettings() {
       const gk = document.getElementById('sGeminiKey').value.trim();
       const ck = document.getElementById('sClaudeKey').value.trim();
       const su = document.getElementById('sSupaUrl').value.trim();
@@ -7069,7 +7218,7 @@ Suggest practical Indian meals that fit the remaining macros and diet mode. For 
       if (ck) LS.setItem('claudeKey', ck);
       if (su) LS.setItem('supaUrl', su);
       if (sk) LS.setItem('supaKey', sk);
-      if (su && sk) initSupabase(su, sk);
+      if (su && sk) await initSupabase(su, sk);
 
       // Save body stats
       const w = parseFloat(document.getElementById('sWeight').value) || bodyStats.weight;
@@ -7096,9 +7245,9 @@ Suggest practical Indian meals that fit the remaining macros and diet mode. For 
       window.location.href = window.location.href.split('?')[0];
     }
     function applyImportedUserId() {
+      if (secureMode) { showToast('Manual ID sync is disabled in Secure Mode (each device has its own private account).', 'error'); return }
       const raw = document.getElementById('importUserId').value;
       const id = raw.trim().toLowerCase();
-      console.log('Applying User ID:', id);
       if (!id) { showToast('Please paste a User ID first', 'error'); return }
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) { showToast('Invalid User ID format. Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', 'error'); return }
       userId = id;
