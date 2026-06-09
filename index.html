@@ -3801,6 +3801,38 @@
       background: linear-gradient(180deg, #FAFBFC 0%, #F3F4F6 100%);
       border: 1px solid rgba(0,0,0,0.06);
       cursor: crosshair;
+      touch-action: pan-y; /* Prevent pinch-zoom on chart, allow vertical scroll */
+    }
+    /* Time range tabs */
+    .wc-range-tabs {
+      display: flex;
+      gap: 6px;
+      margin-top: 12px;
+      margin-bottom: 2px;
+    }
+    .wc-range-btn {
+      flex: 1;
+      padding: 6px 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text2);
+      font-size: 12px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all .2s ease;
+      letter-spacing: 0.02em;
+    }
+    .wc-range-btn:hover {
+      background: rgba(15,118,110,0.05);
+      color: var(--accent);
+      border-color: rgba(15,118,110,0.2);
+    }
+    .wc-range-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
     }
     .wc-chart-wrap .chart-canvas {
       border: none;
@@ -5308,6 +5340,12 @@
           <input class="input" id="weightInput" type="number" step="0.1" placeholder="Enter weight (kg)" style="flex:1">
           <input class="input" id="weightDate" type="date" style="flex:1">
           <button class="btn btn-primary btn-sm" onclick="logWeight()">Log</button>
+        </div>
+        <div class="wc-range-tabs">
+          <button class="wc-range-btn" data-range="7" onclick="setWeightRange(7,this)">1W</button>
+          <button class="wc-range-btn active" data-range="30" onclick="setWeightRange(30,this)">1M</button>
+          <button class="wc-range-btn" data-range="90" onclick="setWeightRange(90,this)">3M</button>
+          <button class="wc-range-btn" data-range="0" onclick="setWeightRange(0,this)">All</button>
         </div>
         <div class="wc-chart-wrap" id="weightChartWrap">
           <canvas class="chart-canvas" id="weightCanvas"></canvas>
@@ -6866,9 +6904,32 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
         html += '<div class="weight-row"><span class="w-date">' + d + '</span><span class="w-val">' + w.weight + ' kg</span>' + diffHtml + '<button class="w-del" onclick="deleteWeight(\'' + w.date + '\')">✕</button></div>';
       });
       log.innerHTML = html;
-      drawWeightChart(weights);
+      // Filter weights for chart based on selected range
+      const range = _wcRange || 30;
+      const chartWeights = _filterWeightsByRange(weights, range);
+      drawWeightChart(chartWeights);
     }
     let weightChartPoints = [];
+    let _wcRange = 30; // Default: 1 month
+    function _filterWeightsByRange(weights, days) {
+      if (!days || days === 0) return weights; // 'All'
+      const sorted = [...weights].sort((a, b) => a.date.localeCompare(b.date));
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffStr = fmt(cutoff);
+      const filtered = sorted.filter(w => w.date >= cutoffStr);
+      return filtered.length >= 2 ? filtered : sorted.slice(-Math.max(2, days));
+    }
+    function setWeightRange(days, btn) {
+      _wcRange = days;
+      document.querySelectorAll('.wc-range-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      const weights = getWeights();
+      if (weights.length) {
+        const chartWeights = _filterWeightsByRange(weights, days);
+        drawWeightChart(chartWeights);
+      }
+    }
     // Bezier helper: compute smooth cubic bezier control points
     function _wcBezierPts(pts) {
       const cp = [];
