@@ -5722,26 +5722,49 @@
     //  - Gemini: responseMimeType application/json
     //  - Claude: system prompt instructs JSON-only, then we extract with bracket-depth parser
     function _extractJSONArray(text) {
+      if (!text || typeof text !== 'string') return null;
+      // Strip markdown code fences (```json ... ``` or ``` ... ```)
+      let clean = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+      // Try direct parse first (fastest path)
+      try {
+        const parsed = JSON.parse(clean);
+        return JSON.stringify(Array.isArray(parsed) ? parsed : [parsed]);
+      } catch (e) { /* continue to extraction */ }
       // Find the first '[' then count bracket depth to find matching ']'
-      const start = text.indexOf('[');
-      if (start === -1) return null;
-      let depth = 0;
-      let inStr = false;
-      let esc = false;
-      for (let i = start; i < text.length; i++) {
-        const ch = text[i];
-        if (esc) { esc = false; continue; }
-        if (ch === '\\') { esc = true; continue; }
-        if (ch === '"') { inStr = !inStr; continue; }
-        if (inStr) continue;
-        if (ch === '[') depth++;
-        else if (ch === ']') { depth--; if (depth === 0) return text.substring(start, i + 1); }
+      const arrStart = clean.indexOf('[');
+      if (arrStart !== -1) {
+        let depth = 0, inStr = false, esc = false;
+        for (let i = arrStart; i < clean.length; i++) {
+          const ch = clean[i];
+          if (esc) { esc = false; continue; }
+          if (ch === '\\') { esc = true; continue; }
+          if (ch === '"') { inStr = !inStr; continue; }
+          if (inStr) continue;
+          if (ch === '[') depth++;
+          else if (ch === ']') { depth--; if (depth === 0) return clean.substring(arrStart, i + 1); }
+        }
       }
-      return null; // unmatched
+      // Maybe it's a single JSON object without array wrapper
+      const objStart = clean.indexOf('{');
+      if (objStart !== -1) {
+        let depth = 0, inStr = false, esc = false;
+        for (let i = objStart; i < clean.length; i++) {
+          const ch = clean[i];
+          if (esc) { esc = false; continue; }
+          if (ch === '\\') { esc = true; continue; }
+          if (ch === '"') { inStr = !inStr; continue; }
+          if (inStr) continue;
+          if (ch === '{') depth++;
+          else if (ch === '}') { depth--; if (depth === 0) return '[' + clean.substring(objStart, i + 1) + ']'; }
+        }
+      }
+      return null; // truly unparseable
     }
     async function callAIJSON(systemPrompt, userMessage) {
       if (aiProvider === 'gemini') {
-        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
+        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
+        const arr = _extractJSONArray(out);
+        return arr || out;
       } else {
         const jsonSystem = systemPrompt + '\n\nCRITICAL: Return ONLY a valid JSON array. No markdown, no code fences, no explanation. Start your response with [ and end with ].';
         const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, system: jsonSystem, messages: [{ role: 'user', content: userMessage }] });
@@ -5751,7 +5774,9 @@
     }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
-        return geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
+        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
+        const arr = _extractJSONArray(out);
+        return arr || out;
       } else {
         const jsonPrompt = prompt + '\n\nCRITICAL: Return ONLY a valid JSON array. No markdown, no code fences, no explanation. Start your response with [ and end with ].';
         const out = await claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }, { type: 'text', text: jsonPrompt }] }] });
