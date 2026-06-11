@@ -5635,10 +5635,15 @@
           const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body) });
           if (res.ok) {
             const data = await res.json();
-            if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
+            if (!data.candidates || !data.candidates[0]?.content?.parts?.length) {
               throw new Error('Gemini returned empty response. The model may have refused the request.');
             }
-            return data.candidates[0].content.parts[0].text;
+            // Gemini 2.5-flash is a "thinking" model: parts[0] may be internal reasoning (thought=true).
+            // The actual answer is always the LAST text part.
+            const parts = data.candidates[0].content.parts;
+            const textParts = parts.filter(p => p.text !== undefined && !p.thought);
+            const answer = textParts.length ? textParts[textParts.length - 1].text : parts[parts.length - 1].text;
+            return answer;
           }
           const err = await res.json().catch(() => ({}));
           const errMsg = err.error?.message || '';
