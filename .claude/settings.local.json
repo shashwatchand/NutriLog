@@ -6,7 +6,13 @@
       "Bash(awk -F',' '{print NF; exit}' '/Users/shashwatchand/Downloads/Indian_Food_Nutrition_Processed.csv')",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(grep \"\\\\.dart$\")",
+      "Bash(git -C \"/Users/shashwatchand/Desktop/nuti project\" status)",
+      "Bash(git -C \"/Users/shashwatchand/Desktop/nuti project\" diff --stat)",
+      "Bash(git -C \"/Users/shashwatchand/Desktop/nuti project\" add index.html sw.js)",
+      "Bash(git -C '/Users/shashwatchand/Desktop/nuti project' commit -m ' *)",
+      "Bash(git -C \"/Users/shashwatchand/Desktop/nuti project\" add .)"
     ]
   }
 }
