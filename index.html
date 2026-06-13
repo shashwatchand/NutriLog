@@ -6149,6 +6149,78 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
       _foodSearchTimer = setTimeout(() => showFoodDropdown(val), 120);
     }
 
+    // ===== NUTRITION VALIDATION LAYER =====
+    // Fuzzy-match a food name against the local FOOD_DB
+    function fuzzyMatchFoodDB(name) {
+      if (typeof FOOD_DB === 'undefined' || !name) return null;
+      const words = name.toLowerCase().replace(/[()]/g, '').split(/\s+/).filter(w => w.length > 2);
+      if (!words.length) return null;
+      let bestMatch = null, bestScore = 0;
+      for (const food of FOOD_DB) {
+        const dbName = food.n.toLowerCase();
+        let score = 0;
+        for (const w of words) {
+          if (dbName.includes(w)) score++;
+        }
+        // Bonus for exact substring match
+        if (dbName.includes(name.toLowerCase().trim())) score += 3;
+        const threshold = Math.max(1, Math.floor(words.length * 0.5));
+        if (score > bestScore && score >= threshold) {
+          bestScore = score;
+          bestMatch = food;
+        }
+      }
+      return bestMatch;
+    }
+
+    // Validate AI nutrition output and correct using FOOD_DB if available
+    function validateAndCorrectNutrition(items) {
+      return items.map(item => {
+        let { food_name, portion, calories, protein, carbs, fat, fiber } = item;
+        calories = calories || 0; protein = protein || 0; carbs = carbs || 0; fat = fat || 0; fiber = fiber || 0;
+
+        // Extract grams from portion string (e.g. "300g", "2 roti (~100g)", "1 bowl (~150g)")
+        let grams = 100;
+        const gMatch = (portion || '').match(/(\d+)\s*g/i);
+        if (gMatch) grams = parseFloat(gMatch[1]);
+
+        // Try to find this food in local FOOD_DB (per-100g values)
+        const dbMatch = fuzzyMatchFoodDB(food_name);
+        if (dbMatch) {
+          // FOOD_DB has per-100g values — scale to actual portion
+          const scale = grams / 100;
+          const dbCal = Math.round(dbMatch.c * scale);
+          const dbProt = Math.round(dbMatch.p * scale * 10) / 10;
+          const dbCarb = Math.round(dbMatch.cb * scale * 10) / 10;
+          const dbFat = Math.round(dbMatch.f * scale * 10) / 10;
+          const dbFib = Math.round(dbMatch.fb * scale * 10) / 10;
+
+          // If AI protein differs by >25% from DB, trust the DB
+          if (dbProt > 0 && Math.abs(protein - dbProt) / dbProt > 0.25) {
+            console.log(`🔧 Corrected ${food_name}: AI protein=${protein}g → DB protein=${dbProt}g (from ${dbMatch.n})`);
+            protein = dbProt;
+            carbs = dbCarb;
+            fat = dbFat;
+            fiber = dbFib;
+            calories = dbCal;
+          }
+        }
+
+        // Calorie sanity check: P*4 + C*4 + F*9 should be within 20% of reported calories
+        const computedCal = protein * 4 + carbs * 4 + fat * 9;
+        if (calories > 0 && computedCal > 0) {
+          const ratio = computedCal / calories;
+          if (ratio < 0.7 || ratio > 1.3) {
+            // Calories are inconsistent with macros — recalculate from macros
+            console.log(`🔧 Recalculated calories for ${food_name}: reported=${calories} → computed=${Math.round(computedCal)}`);
+            calories = Math.round(computedCal / 5) * 5; // round to nearest 5
+          }
+        }
+
+        return { ...item, calories, protein: Math.round(protein * 10) / 10, carbs: Math.round(carbs * 10) / 10, fat: Math.round(fat * 10) / 10, fiber: Math.round(fiber * 10) / 10 };
+      });
+    }
+
     // Add Food
     async function analyzeFood() {
       const input = document.getElementById('foodInput');
@@ -6158,21 +6230,50 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
         showToast('🤖 Analyzing with AI...', 'info');
-        const prompt = `Estimate nutrition for the food(s) below. Use these RULES for consistency:
-1. Use standard reference nutrition values (IFCT / USDA) for common Indian foods (roti, dal, sabzi, biryani, paneer, chai, paratha, dosa, idli, rice, etc).
-2. If the user gives a quantity (e.g. "2 roti", "1 bowl dal", "200g rice"), use it. If NO quantity is given, assume ONE standard home serving and state that portion in grams.
-3. Method: estimate per-100g values for the item, then scale to the portion. Round calories to the nearest 5, macros to 1 decimal.
-4. Calories must roughly equal protein*4 + carbs*4 + fat*9 (within ~10%). Re-check before answering.
-5. Split a multi-item meal into separate entries.
+        const prompt = `Estimate nutrition for: "${food}"
 
-Return ONLY a valid JSON array, no markdown, no explanation:
-[{"food_name":"name","portion":"e.g. 2 roti (~100g)","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]
+RULES:
+1. Use USDA / IFCT standard reference values. For each food, first determine the correct PER-100g values for the item AS CONSUMED (cooked/prepared state, not raw).
+2. Distinguish RAW vs COOKED. If the user says "cooked chicken 300g", that means 300g of already-cooked meat. Cooked chicken breast has ~31g protein per 100g. Raw chicken breast has ~23g protein per 100g. Use the correct state.
+3. If a quantity is given (e.g. "2 roti", "300g rice"), use it. Otherwise assume one standard serving and state the portion in grams.
+4. Scale: multiply per-100g values by (portion_grams / 100).
+5. Round calories to nearest 5, macros to 1 decimal.
+6. VERIFY: calories must ≈ protein*4 + carbs*4 + fat*9 (within 10%). If not, fix the values.
+7. Split multi-item meals into separate entries.
 
-Food: ${food}`;
-        const text = await callAIJSON('You are a precise nutrition analysis engine. You always use standard reference values and standard serving sizes so the same food always gives the same numbers. Return ONLY valid JSON arrays.', prompt);
+Return ONLY a JSON array. Include a "per_100g" field so the math can be verified:
+[{"food_name":"name","portion":"e.g. 300g","grams":300,"per_100g":{"cal":165,"p":31,"c":0,"f":3.6},"calories":495,"protein":93,"carbs":0,"fat":10.8,"fiber":0}]`;
+        const text = await callAIJSON('You are a precise nutrition database. You return accurate USDA/IFCT per-100g values scaled to the given portion. Always include per_100g reference values. Return ONLY valid JSON arrays.', prompt);
         const jsonArr = _extractJSONArray(text);
         if (!jsonArr) throw new Error('Could not parse AI response');
-        const items = JSON.parse(jsonArr);
+        let items = JSON.parse(jsonArr);
+
+        // Post-process: if AI included per_100g, verify the math
+        items = items.map(item => {
+          if (item.per_100g && item.grams) {
+            const g = item.grams;
+            const ref = item.per_100g;
+            // Recalculate from per_100g values to ensure accuracy
+            const scale = g / 100;
+            const expectedProt = Math.round((ref.p || 0) * scale * 10) / 10;
+            const expectedCarb = Math.round((ref.c || 0) * scale * 10) / 10;
+            const expectedFat = Math.round((ref.f || 0) * scale * 10) / 10;
+            const expectedCal = Math.round((ref.cal || 0) * scale / 5) * 5;
+            // If AI's final values don't match its own per_100g math, fix them
+            if (Math.abs((item.protein || 0) - expectedProt) > 2) {
+              console.log(`🔧 Fixed protein math: AI said ${item.protein}g but per_100g×${g/100} = ${expectedProt}g`);
+              item.protein = expectedProt;
+            }
+            if (Math.abs((item.carbs || 0) - expectedCarb) > 2) item.carbs = expectedCarb;
+            if (Math.abs((item.fat || 0) - expectedFat) > 1) item.fat = expectedFat;
+            if (Math.abs((item.calories || 0) - expectedCal) > 20) item.calories = expectedCal;
+          }
+          return item;
+        });
+
+        // Cross-validate with local FOOD_DB and sanity check
+        items = validateAndCorrectNutrition(items);
+
         // Insert all items in parallel
         await Promise.all(items.map(item =>
           sb.from('meals').insert({ user_id: userId, date: fmt(currentDate), food_name: item.food_name, portion: item.portion || '', calories: Math.round(item.calories || 0), protein: r(item.protein || 0), carbs: r(item.carbs || 0), fat: r(item.fat || 0), fiber: r(item.fiber || 0) })
@@ -7268,11 +7369,24 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
         const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-        const visionPrompt = 'Identify every food in this image and estimate nutrition. RULES: use standard IFCT/USDA reference values; estimate the visible portion in grams; method = per-100g value scaled to the portion; calories ~= protein*4 + carbs*4 + fat*9 (within ~10%); round calories to nearest 5, macros to 1 decimal; one entry per distinct item. Return ONLY a valid JSON array (no markdown): [{"food_name":"name","portion":"e.g. 1 bowl (~150g)","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
+        const visionPrompt = 'Identify every food in this image and estimate nutrition. RULES: use standard USDA/IFCT per-100g reference values for each food AS CONSUMED (cooked state). First determine per-100g values, then estimate visible portion in grams, then scale. Include per_100g field. Calories must ~= protein*4 + carbs*4 + fat*9 (within 10%). Round calories to nearest 5, macros to 1 decimal. One entry per distinct item. Return ONLY a valid JSON array (no markdown): [{"food_name":"name","portion":"e.g. 1 bowl (~150g)","grams":150,"per_100g":{"cal":number,"p":number,"c":number,"f":number},"calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
         const text = await callAIVision(base64, 'image/jpeg', visionPrompt);
         const jsonArr = _extractJSONArray(text);
         if (!jsonArr) throw new Error('Could not parse AI response');
-        const items = JSON.parse(jsonArr);
+        let items = JSON.parse(jsonArr);
+        // Validate per_100g math and cross-check with local DB
+        items = items.map(item => {
+          if (item.per_100g && item.grams) {
+            const s = item.grams / 100, ref = item.per_100g;
+            const ep = Math.round((ref.p||0)*s*10)/10, ec = Math.round((ref.c||0)*s*10)/10, ef = Math.round((ref.f||0)*s*10)/10, ek = Math.round((ref.cal||0)*s/5)*5;
+            if (Math.abs((item.protein||0)-ep)>2) item.protein = ep;
+            if (Math.abs((item.carbs||0)-ec)>2) item.carbs = ec;
+            if (Math.abs((item.fat||0)-ef)>1) item.fat = ef;
+            if (Math.abs((item.calories||0)-ek)>20) item.calories = ek;
+          }
+          return item;
+        });
+        items = validateAndCorrectNutrition(items);
         for (const item of items) {
           const { error } = await sb.from('meals').insert({ user_id: userId, date: fmt(currentDate), food_name: item.food_name, portion: item.portion || '', calories: Math.round(item.calories || 0), protein: r(item.protein || 0), carbs: r(item.carbs || 0), fat: r(item.fat || 0), fiber: r(item.fiber || 0) });
           if (error) throw error;
@@ -7289,11 +7403,24 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
       btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>';
       try {
         const base64 = await resizeAndEncode(file, 800);
-        const visionPrompt = 'Identify every food in this image and estimate nutrition. RULES: use standard IFCT/USDA reference values; estimate the visible portion in grams; method = per-100g value scaled to the portion; calories ~= protein*4 + carbs*4 + fat*9 (within ~10%); round calories to nearest 5, macros to 1 decimal; one entry per distinct item. Return ONLY a valid JSON array (no markdown): [{"food_name":"name","portion":"e.g. 1 bowl (~150g)","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
+        const visionPrompt = 'Identify every food in this image and estimate nutrition. RULES: use standard USDA/IFCT per-100g reference values for each food AS CONSUMED (cooked state). First determine per-100g values, then estimate visible portion in grams, then scale. Include per_100g field. Calories must ~= protein*4 + carbs*4 + fat*9 (within 10%). Round calories to nearest 5, macros to 1 decimal. One entry per distinct item. Return ONLY a valid JSON array (no markdown): [{"food_name":"name","portion":"e.g. 1 bowl (~150g)","grams":150,"per_100g":{"cal":number,"p":number,"c":number,"f":number},"calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}]';
         const text = await callAIVision(base64, 'image/jpeg', visionPrompt);
         const jsonArr2 = _extractJSONArray(text);
         if (!jsonArr2) throw new Error('Could not parse AI response');
-        const items = JSON.parse(jsonArr2);
+        let items = JSON.parse(jsonArr2);
+        // Validate per_100g math and cross-check with local DB
+        items = items.map(item => {
+          if (item.per_100g && item.grams) {
+            const s = item.grams / 100, ref = item.per_100g;
+            const ep = Math.round((ref.p||0)*s*10)/10, ec = Math.round((ref.c||0)*s*10)/10, ef = Math.round((ref.f||0)*s*10)/10, ek = Math.round((ref.cal||0)*s/5)*5;
+            if (Math.abs((item.protein||0)-ep)>2) item.protein = ep;
+            if (Math.abs((item.carbs||0)-ec)>2) item.carbs = ec;
+            if (Math.abs((item.fat||0)-ef)>1) item.fat = ef;
+            if (Math.abs((item.calories||0)-ek)>20) item.calories = ek;
+          }
+          return item;
+        });
+        items = validateAndCorrectNutrition(items);
         for (const item of items) {
           const { error } = await sb.from('meals').insert({ user_id: userId, date: fmt(currentDate), food_name: item.food_name, portion: item.portion || '', calories: Math.round(item.calories || 0), protein: r(item.protein || 0), carbs: r(item.carbs || 0), fat: r(item.fat || 0), fiber: r(item.fiber || 0) });
           if (error) throw error;
