@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nutrilog-v10';
+const CACHE_NAME = 'nutrilog-v11';
 const STATIC_ASSETS = [
   './',
   './index.html',

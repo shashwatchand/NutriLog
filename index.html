@@ -5421,21 +5421,19 @@
           </select>
         </div>
       </div>
-      <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block">Baseline Activity</label>
+      <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block">Baseline Activity Level</label>
+      <select class="input" id="sActivityLevel" style="margin-bottom:6px" onchange="updateTdeeDisplay()">
+        <option value="sedentary">Sedentary — desk job, little exercise</option>
+        <option value="low_active">Low Active — light exercise 1–3 days/wk</option>
+        <option value="active">Active — moderate exercise 3–5 days/wk</option>
+        <option value="very_active">Very Active — hard exercise 6–7 days/wk</option>
+      </select>
+      <p style="font-size:10px;color:var(--text2);margin-bottom:12px;line-height:1.4">Pick your general daily lifestyle — workouts you log are added on top, not double-counted.</p>
       <div
         style="background:var(--surface);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-size:12px;font-weight:700;color:var(--accent)">🧑‍💻 Sedentary Baseline (×1.20)</span>
-        </div>
-        <div style="font-size:10px;color:var(--text2);line-height:1.4">Your TDEE is calculated at sedentary level (desk
-          job + daily living). Exercise you log is added separately on top — no double counting!</div>
-      </div>
-      <div
-        style="background:var(--surface);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border)">
-        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">YOUR BASE MAINTENANCE (without exercise)</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">YOUR DAILY CALORIE NEED (EER)</div>
         <div style="font-size:22px;font-weight:800;color:var(--accent)" id="sTdeeDisplay">-- kcal</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">BMR: <span id="sBmrDisplay">--</span> kcal × 1.20
-          (sedentary)</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Sedentary base: <span id="sBmrDisplay">--</span> kcal · IOM 2005 EER formula</div>
       </div>
       <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveSettings()">Save
         Settings</button>
@@ -5497,7 +5495,14 @@
     let sb, currentDate = new Date(), userId, goals = { cal: 2000, prot: 120, carb: 250, fat: 65, fib: 30 };
     let aiProvider = 'gemini';
     let dietMode = 'balanced';
-    let bodyStats = { weight: 70, height: 170, age: 25, gender: 'male', activityLevel: 1.2 };
+    let bodyStats = { weight: 70, height: 170, age: 25, gender: 'male', activityLevel: 'sedentary' };
+    // IOM 2005 EER physical-activity coefficients [male, female]
+    const IOM_PA = {
+      sedentary:   { male: 1.00, female: 1.00 },
+      low_active:  { male: 1.11, female: 1.12 },
+      active:      { male: 1.25, female: 1.27 },
+      very_active: { male: 1.48, female: 1.45 }
+    };
     let todayEaten = 0, todayBurned = 0;
     let selectedPreset = null;
     let secureMode = false; // true = anonymous-auth + RLS (per-user private). Set in init().
@@ -5538,7 +5543,7 @@
       dietMode = LS.getItem('dietMode') || 'balanced';
       const bs = LS.getItem('bodyStats');
       if (bs) bodyStats = JSON.parse(bs);
-      bodyStats.activityLevel = 1.2; // Always sedentary baseline
+      if (!bodyStats.activityLevel || typeof bodyStats.activityLevel === 'number') bodyStats.activityLevel = 'sedentary';
       if (aiKey && su && sk) {
         await initSupabase(su, sk);
         showScreen('mainScreen');
@@ -5767,7 +5772,7 @@
     }
     async function callAIJSON(systemPrompt, userMessage) {
       if (aiProvider === 'gemini') {
-        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
+        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' }, thinkingConfig: { thinkingBudget: 0 } });
         const arr = _extractJSONArray(out);
         return arr || out;
       } else {
@@ -5779,7 +5784,7 @@
     }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
-        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0, responseMimeType: 'application/json' } });
+        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' }, thinkingConfig: { thinkingBudget: 0 } });
         const arr = _extractJSONArray(out);
         return arr || out;
       } else {
@@ -6206,11 +6211,11 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
           }
         }
 
-        // Calorie sanity check: P*4 + C*4 + F*9 should be within 20% of reported calories
+        // Atwater check: P*4 + C*4 + F*9 must be within 25% of reported calories (IOM standard)
         const computedCal = protein * 4 + carbs * 4 + fat * 9;
         if (calories > 0 && computedCal > 0) {
           const ratio = computedCal / calories;
-          if (ratio < 0.7 || ratio > 1.3) {
+          if (ratio < 0.75 || ratio > 1.25) {
             // Calories are inconsistent with macros — recalculate from macros
             console.log(`🔧 Recalculated calories for ${food_name}: reported=${calories} → computed=${Math.round(computedCal)}`);
             calories = Math.round(computedCal / 5) * 5; // round to nearest 5
@@ -7557,6 +7562,7 @@ Suggest practical Indian meals that fit the remaining macros and diet mode. For 
       document.getElementById('sHeight').value = bodyStats.height || '';
       document.getElementById('sAge').value = bodyStats.age || '';
       document.getElementById('sGender').value = bodyStats.gender || 'male';
+      document.getElementById('sActivityLevel').value = bodyStats.activityLevel || 'sedentary';
       updateTdeeDisplay();
       switchSettingsProvider(aiProvider);
       renderSecurityStatus();
@@ -7613,7 +7619,8 @@ Suggest practical Indian meals that fit the remaining macros and diet mode. For 
       const h = parseInt(document.getElementById('sHeight').value) || bodyStats.height;
       const a = parseInt(document.getElementById('sAge').value) || bodyStats.age;
       const g = document.getElementById('sGender').value || 'male';
-      bodyStats = { ...bodyStats, weight: w, height: h, age: a, gender: g };
+      const pal = document.getElementById('sActivityLevel')?.value || bodyStats.activityLevel || 'sedentary';
+      bodyStats = { ...bodyStats, weight: w, height: h, age: a, gender: g, activityLevel: pal };
       LS.setItem('bodyStats', JSON.stringify(bodyStats));
       // Sync to cloud
       saveGoalsToCloud();
@@ -7910,24 +7917,31 @@ Activities: ${text}`;
         updateNetCalories();
       } catch (e) { showToast('Delete failed: ' + e.message, 'error'); }
     }
-    // BMR & TDEE Calculations (Mifflin-St Jeor)
+    // EER Calculations (IOM 2005 — more accurate than Mifflin-St Jeor)
+    function _eer(w, h, a, g, pal) {
+      const hm = h / 100;
+      const pa = (IOM_PA[pal] || IOM_PA.sedentary)[g === 'female' ? 'female' : 'male'];
+      if (g === 'female') return Math.round(354 - 6.91 * a + pa * (9.36 * w + 726 * hm));
+      return Math.round(662 - 9.53 * a + pa * (15.91 * w + 539.6 * hm));
+    }
     function calcBMR() {
       const { weight, height, age, gender } = bodyStats;
-      if (gender === 'female') return 10 * weight + 6.25 * height - 5 * age - 161;
-      return 10 * weight + 6.25 * height - 5 * age + 5;
+      return _eer(weight, height, age, gender, 'sedentary');
     }
     function calcTDEE() {
-      return Math.round(calcBMR() * 1.2);
+      const { weight, height, age, gender, activityLevel } = bodyStats;
+      return _eer(weight, height, age, gender, activityLevel || 'sedentary');
     }
     function updateTdeeDisplay() {
       const w = parseFloat(document.getElementById('sWeight').value) || bodyStats.weight;
       const h = parseInt(document.getElementById('sHeight').value) || bodyStats.height;
       const a = parseInt(document.getElementById('sAge').value) || bodyStats.age;
       const g = document.getElementById('sGender').value || 'male';
-      let bmr = g === 'female' ? 10 * w + 6.25 * h - 5 * a - 161 : 10 * w + 6.25 * h - 5 * a + 5;
-      let tdee = Math.round(bmr * 1.2);
-      document.getElementById('sBmrDisplay').textContent = Math.round(bmr);
-      document.getElementById('sTdeeDisplay').textContent = tdee + ' kcal';
+      const pal = document.getElementById('sActivityLevel')?.value || bodyStats.activityLevel || 'sedentary';
+      const base = _eer(w, h, a, g, 'sedentary');
+      const eer  = _eer(w, h, a, g, pal);
+      document.getElementById('sBmrDisplay').textContent = base;
+      document.getElementById('sTdeeDisplay').textContent = eer + ' kcal';
     }
     // Net calories update
     function updateNetCalories() {
@@ -8102,8 +8116,9 @@ Activities: ${text}`;
       document.getElementById('presetDuration')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); logPresetActivity() } });
       document.getElementById('qwInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); quickLogWeight() } });
       // Live TDEE preview when body stats change
-      ['sWeight', 'sHeight', 'sAge', 'sGender'].forEach(id => {
+      ['sWeight', 'sHeight', 'sAge', 'sGender', 'sActivityLevel'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', updateTdeeDisplay);
+        document.getElementById(id)?.addEventListener('change', updateTdeeDisplay);
       });
       // Setup chart swipe gestures
       setupChartSwipe();
