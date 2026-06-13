@@ -5772,8 +5772,18 @@
     }
     async function callAIJSON(systemPrompt, userMessage) {
       if (aiProvider === 'gemini') {
-        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } });
-        const arr = _extractJSONArray(out);
+        // Try JSON mode first; if it fails or returns unparseable output, fall back to plain text + parse
+        let out, arr;
+        try {
+          out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } });
+          arr = _extractJSONArray(out);
+        } catch(e) { /* swallow — will retry below */ }
+        if (!arr) {
+          // Fallback: plain text mode — model still instructed to return JSON
+          const fbSystem = systemPrompt + '\n\nIMPORTANT: Your entire response must be a single valid JSON array starting with [ and ending with ]. No prose, no markdown fences.';
+          out = await geminiCall({ system_instruction: { parts: [{ text: fbSystem }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0 } });
+          arr = _extractJSONArray(out);
+        }
         return arr || out;
       } else {
         const jsonSystem = systemPrompt + '\n\nCRITICAL: Return ONLY a valid JSON array. No markdown, no code fences, no explanation. Start your response with [ and end with ].';
@@ -6252,7 +6262,7 @@ Return ONLY a JSON array. Include a "per_100g" field so the math can be verified
 [{"food_name":"name","portion":"e.g. 300g","grams":300,"per_100g":{"cal":165,"p":31,"c":0,"f":3.6},"calories":495,"protein":93,"carbs":0,"fat":10.8,"fiber":0}]`;
         const text = await callAIJSON('You are a precise nutrition database. You return accurate USDA/IFCT per-100g values scaled to the given portion. Always include per_100g reference values. Return ONLY valid JSON arrays.', prompt);
         const jsonArr = _extractJSONArray(text);
-        if (!jsonArr) throw new Error('Could not parse AI response');
+        if (!jsonArr) { console.error('AI raw response:', text); throw new Error('AI returned unexpected format. Check console for details.'); }
         let items = JSON.parse(jsonArr);
 
         // Post-process: if AI included per_100g, verify the math
