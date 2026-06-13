@@ -5772,7 +5772,7 @@
     }
     async function callAIJSON(systemPrompt, userMessage) {
       if (aiProvider === 'gemini') {
-        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } } });
+        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } });
         const arr = _extractJSONArray(out);
         return arr || out;
       } else {
@@ -5784,7 +5784,7 @@
     }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
-        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } } });
+        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } });
         const arr = _extractJSONArray(out);
         return arr || out;
       } else {
@@ -6184,10 +6184,12 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
         let { food_name, portion, calories, protein, carbs, fat, fiber } = item;
         calories = calories || 0; protein = protein || 0; carbs = carbs || 0; fat = fat || 0; fiber = fiber || 0;
 
-        // Extract grams from portion string (e.g. "300g", "2 roti (~100g)", "1 bowl (~150g)")
-        let grams = 100;
-        const gMatch = (portion || '').match(/(\d+)\s*g/i);
-        if (gMatch) grams = parseFloat(gMatch[1]);
+        // Prefer AI's explicit grams field; fall back to parsing portion string
+        let grams = item.grams || 100;
+        if (!item.grams) {
+          const gMatch = (portion || '').match(/(\d+(?:\.\d+)?)\s*g/i);
+          if (gMatch) grams = parseFloat(gMatch[1]);
+        }
 
         // Try to find this food in local FOOD_DB (per-100g values)
         const dbMatch = fuzzyMatchFoodDB(food_name);
