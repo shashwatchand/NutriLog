@@ -5630,10 +5630,10 @@
       showToast('Setup complete! Using ' + (provider === 'gemini' ? 'Google Gemini 🆓' : 'Claude 🔑'), 'success');
     }
     // Unified AI Functions
-    async function geminiCall(body, retries = 3) {
+    async function geminiCall(body, retries = 3, model = 'gemini-2.5-flash') {
       const key = LS.getItem('geminiKey');
       if (!key) throw new Error('Gemini API key not set. Go to Settings to add it.');
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       for (let i = 0; i <= retries; i++) {
         try {
           // Key sent as a header, not in the URL, so it never leaks into logs/history.
@@ -5772,18 +5772,9 @@
     }
     async function callAIJSON(systemPrompt, userMessage) {
       if (aiProvider === 'gemini') {
-        // Try JSON mode first; if it fails or returns unparseable output, fall back to plain text + parse
-        let out, arr;
-        try {
-          out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } });
-          arr = _extractJSONArray(out);
-        } catch(e) { /* swallow — will retry below */ }
-        if (!arr) {
-          // Fallback: plain text mode — model still instructed to return JSON
-          const fbSystem = systemPrompt + '\n\nIMPORTANT: Your entire response must be a single valid JSON array starting with [ and ending with ]. No prose, no markdown fences.';
-          out = await geminiCall({ system_instruction: { parts: [{ text: fbSystem }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0 } });
-          arr = _extractJSONArray(out);
-        }
+        // Use gemini-2.0-flash for JSON calls — not a thinking model, reliable structured output
+        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } }, 3, 'gemini-2.0-flash');
+        const arr = _extractJSONArray(out);
         return arr || out;
       } else {
         const jsonSystem = systemPrompt + '\n\nCRITICAL: Return ONLY a valid JSON array. No markdown, no code fences, no explanation. Start your response with [ and end with ].';
@@ -5794,7 +5785,7 @@
     }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
-        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } });
+        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } }, 3, 'gemini-2.0-flash');
         const arr = _extractJSONArray(out);
         return arr || out;
       } else {
