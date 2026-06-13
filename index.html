@@ -6185,12 +6185,8 @@ ${m.portion ? '<div class="portion">' + esc(m.portion) + '</div>' : ''}
         let { food_name, portion, calories, protein, carbs, fat, fiber } = item;
         calories = calories || 0; protein = protein || 0; carbs = carbs || 0; fat = fat || 0; fiber = fiber || 0;
 
-        // Prefer AI's explicit grams field; fall back to parsing portion string
+        // item.grams is canonicalized upstream (portion string → grams) before this runs
         let grams = item.grams || 100;
-        if (!item.grams) {
-          const gMatch = (portion || '').match(/(\d+(?:\.\d+)?)\s*g/i);
-          if (gMatch) grams = parseFloat(gMatch[1]);
-        }
 
         // Try to find this food in local FOOD_DB (per-100g values)
         const dbMatch = fuzzyMatchFoodDB(food_name);
@@ -6256,7 +6252,15 @@ Return ONLY a JSON array. Include a "per_100g" field so the math can be verified
         if (!jsonArr) { console.error('AI raw response:', text); throw new Error('AI returned unexpected format. Check console for details.'); }
         let items = JSON.parse(jsonArr);
 
-        // Post-process: if AI included per_100g, verify the math
+        // Step 0: canonicalize grams from portion string — AI often writes "200g" in
+        // portion but sets grams:100 (default). Portion string is the ground truth.
+        items = items.map(item => {
+          const pMatch = (item.portion || '').match(/(\d+(?:\.\d+)?)\s*g/i);
+          item.grams = pMatch ? parseFloat(pMatch[1]) : (item.grams || 100);
+          return item;
+        });
+
+        // Step 1: if AI included per_100g, verify the scaled math is consistent
         items = items.map(item => {
           if (item.per_100g && item.grams) {
             const g = item.grams;
@@ -7382,7 +7386,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
         const jsonArr = _extractJSONArray(text);
         if (!jsonArr) throw new Error('Could not parse AI response');
         let items = JSON.parse(jsonArr);
-        // Validate per_100g math and cross-check with local DB
+        items = items.map(item => { const m = (item.portion||'').match(/(\d+(?:\.\d+)?)\s*g/i); item.grams = m ? parseFloat(m[1]) : (item.grams||100); return item; });
         items = items.map(item => {
           if (item.per_100g && item.grams) {
             const s = item.grams / 100, ref = item.per_100g;
@@ -7416,7 +7420,7 @@ Give brief analysis (under 300 words) with: 1) Overall assessment 2) What's good
         const jsonArr2 = _extractJSONArray(text);
         if (!jsonArr2) throw new Error('Could not parse AI response');
         let items = JSON.parse(jsonArr2);
-        // Validate per_100g math and cross-check with local DB
+        items = items.map(item => { const m = (item.portion||'').match(/(\d+(?:\.\d+)?)\s*g/i); item.grams = m ? parseFloat(m[1]) : (item.grams||100); return item; });
         items = items.map(item => {
           if (item.per_100g && item.grams) {
             const s = item.grams / 100, ref = item.per_100g;
