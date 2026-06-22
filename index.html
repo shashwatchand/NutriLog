@@ -7828,16 +7828,18 @@ IMPORTANT RULES:
     // AI estimates calories burned every time — no stored MET formula.
     // Shared by the quick-add presets and the free-text describe box.
     async function aiEstimateBurn(text) {
-      const prompt = `Estimate calories burned. User: ${bodyStats.weight}kg, ${bodyStats.age}y, ${bodyStats.height}cm, ${bodyStats.gender}.
+      const prompt = `Estimate NET calories burned (above resting metabolism). User: ${bodyStats.weight}kg, ${bodyStats.age}y, ${bodyStats.height}cm, ${bodyStats.gender}.
 RULES for consistency:
-1. Use standard MET values: calories = MET * weight(kg) * hours. Walking ~3.5, brisk walk ~4.3, running ~9, cycling ~7, gym/weights ~5, yoga ~3, swimming ~7, HIIT ~9, dancing ~5, stairs ~8, housework ~3.3, stretching ~2.5.
+1. Use NET MET formula: calories = (MET - 1) × weight(kg) × hours. This gives EXTRA calories above baseline since the user's TDEE already covers resting metabolism.
+   Reference MET values: Walking ~3.5, brisk walk ~4.3, running ~9, cycling ~7, gym/weights ~5, yoga ~3, swimming ~7, HIIT ~9, dancing ~5, stairs ~8, housework ~3.3, stretching ~2.5, sports ~6.
 2. If duration is missing, assume 30 min.
 3. Round calories to the nearest 5.
+4. Example: 30 min running for an 85kg person = (9-1) × 85 × 0.5 = 340 kcal (NOT 9 × 85 × 0.5 = 383).
 
 Return ONLY a valid JSON array (no markdown): [{"activity_name":"name","duration_min":number,"calories_burned":number}]
 
 Activities: ${text}`;
-      const aiText = await callAIJSON('You are a precise exercise calorie estimator. You always use standard MET values so the same activity always gives the same number. Return ONLY valid JSON arrays.', prompt);
+      const aiText = await callAIJSON('You are a precise exercise calorie estimator. You estimate NET calories burned ABOVE resting metabolism using (MET-1) × weight × hours. Never use total MET. Return ONLY valid JSON arrays.', prompt);
       const jsonArr = _extractJSONArray(aiText);
       if (!jsonArr) throw new Error('Could not parse AI response');
       const items = JSON.parse(jsonArr);
