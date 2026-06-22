@@ -5630,7 +5630,9 @@
       showToast('Setup complete! Using ' + (provider === 'gemini' ? 'Google Gemini 🆓' : 'Claude 🔑'), 'success');
     }
     // Unified AI Functions
-    async function geminiCall(body, retries = 3, model = 'gemini-2.5-flash') {
+    const GEMINI_MODEL = 'gemini-3.5-flash';
+    const GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
+    async function geminiCall(body, retries = 3, model = GEMINI_MODEL) {
       const key = LS.getItem('geminiKey');
       if (!key) throw new Error('Gemini API key not set. Go to Settings to add it.');
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
@@ -5652,6 +5654,10 @@
           }
           const err = await res.json().catch(() => ({}));
           const errMsg = err.error?.message || '';
+          if (res.status === 404 && model === GEMINI_MODEL) {
+            console.warn(`${GEMINI_MODEL} unavailable; retrying with ${GEMINI_FALLBACK_MODEL}`);
+            return geminiCall(body, retries, GEMINI_FALLBACK_MODEL);
+          }
           if (res.status === 429 && i < retries) {
             const waitMatch = errMsg.match(/retry in (\d+(\.\d+)?)/i);
             const wait = waitMatch ? Math.ceil(parseFloat(waitMatch[1])) + 1 : [5, 10, 20][i];
@@ -5665,6 +5671,9 @@
             await new Promise(r => setTimeout(r, wait * 1000));
             continue;
           }
+          if (res.status === 400) throw new Error('Gemini rejected the request: ' + (errMsg || 'invalid request'));
+          if (res.status === 403) throw new Error('Gemini API key was denied. Check the key and its API restrictions in Settings.');
+          if (res.status === 404) throw new Error('Gemini model is unavailable for this API key. Try a newly created Google AI Studio key.');
           throw new Error(errMsg || 'Gemini API error (HTTP ' + res.status + ')');
         } catch (e) {
           if (e.message.includes('fetch') && i < retries) {
@@ -5721,9 +5730,8 @@
       }
     }
     async function callAI(systemPrompt, userMessage) {
-      // temperature 0 => deterministic: same food typed twice gives the same numbers.
       if (aiProvider === 'gemini') {
-        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 1024, temperature: 0 } });
+        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: 'LOW' } } });
       } else {
         return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 1024, temperature: 0, system: systemPrompt, messages: [{ role: 'user', content: userMessage }] });
       }
@@ -5772,8 +5780,7 @@
     }
     async function callAIJSON(systemPrompt, userMessage) {
       if (aiProvider === 'gemini') {
-        // Use gemini-2.0-flash for JSON calls — not a thinking model, reliable structured output
-        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } }, 3, 'gemini-2.0-flash');
+        const out = await geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: userMessage }] }], generationConfig: { maxOutputTokens: 4096, responseMimeType: 'application/json', thinkingConfig: { thinkingLevel: 'LOW' } } });
         const arr = _extractJSONArray(out);
         return arr || out;
       } else {
@@ -5785,7 +5792,7 @@
     }
     async function callAIVision(base64, mediaType, prompt) {
       if (aiProvider === 'gemini') {
-        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0, responseMimeType: 'application/json' } }, 3, 'gemini-2.0-flash');
+        const out = await geminiCall({ contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: base64 } }, { text: prompt }] }], generationConfig: { maxOutputTokens: 4096, responseMimeType: 'application/json', thinkingConfig: { thinkingLevel: 'LOW' } } });
         const arr = _extractJSONArray(out);
         return arr || out;
       } else {
@@ -5798,7 +5805,7 @@
     async function callAIChat(systemPrompt, messages) {
       if (aiProvider === 'gemini') {
         const contents = messages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] }));
-        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents, generationConfig: { maxOutputTokens: 512, temperature: 0.3 } });
+        return geminiCall({ system_instruction: { parts: [{ text: systemPrompt }] }, contents, generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'MINIMAL' } } });
       } else {
         return claudeCall({ model: 'claude-sonnet-4-6', max_tokens: 512, temperature: 0.3, system: systemPrompt, messages });
       }
